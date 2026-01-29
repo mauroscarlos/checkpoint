@@ -149,33 +149,66 @@ if pagina == "Bater Ponto" and selecionado:
         with m3: st.markdown(f"Retorno<br>{format_metric(reg_hoje.get('retorno_almoco') if reg_hoje else None)}", unsafe_allow_html=True)
         with m4: st.markdown(f"Saída<br>{format_metric(reg_hoje.get('saida') if reg_hoje else None)}", unsafe_allow_html=True)
 
-# --- PÁGINA: FOLHA DE PONTO ---
+# --- PÁGINA: FOLHA DE PONTO (COM ANEXOS) ---
 elif pagina == "Folha de Ponto" and selecionado:
-    st.subheader(f"📅 Folha: {selecionado}")
+    st.subheader(f"📅 Folha e Justificativas: {selecionado}")
+    
     num_dias = calendar.monthrange(int(ano), mes)[1]
     dias_do_mes = [date(int(ano), mes, d) for d in range(1, num_dias + 1)]
     
     res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).execute()
     dados_existentes = {datetime.strptime(d['data'], '%Y-%m-%d').date(): d for d in res.data}
 
-    c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1.8, 1.8, 1.8, 1.8, 0.8, 0.8])
+    # Cabeçalho
+    c1, c2, c3, c4, c5, c6 = st.columns([1, 4, 1, 1, 1, 1])
+    
     for dia in dias_do_mes:
         reg = dados_existentes.get(dia, {})
-        with st.container():
-            col_data, col_e, col_sa, col_ra, col_sf, col_total, col_btn = st.columns([1, 1.8, 1.8, 1.8, 1.8, 0.8, 0.8])
-            col_data.write(dia.strftime("%d/%m"))
-            ent = col_e.time_input("E", value=datetime.strptime(reg.get('entrada', "08:00"), "%H:%M"), key=f"e_{dia}", label_visibility="collapsed")
-            sa = col_sa.time_input("SA", value=datetime.strptime(reg.get('saida_almoco', "12:00"), "%H:%M"), key=f"sa_{dia}", label_visibility="collapsed")
-            ra = col_ra.time_input("RA", value=datetime.strptime(reg.get('retorno_almoco', "13:00"), "%H:%M"), key=f"ra_{dia}", label_visibility="collapsed")
-            sf = col_sf.time_input("SF", value=datetime.strptime(reg.get('saida', "17:00"), "%H:%M"), key=f"sf_{dia}", label_visibility="collapsed")
-            total = calcular_horas(ent, sa, ra, sf)
-            col_total.write(f"{total}h")
-            if col_btn.button("💾", key=f"btn_{dia}"):
-                payload = {"usuario": selecionado, "data": str(dia), "entrada": str(ent)[:5], "saida_almoco": str(sa)[:5], 
-                           "retorno_almoco": str(ra)[:5], "saida": str(sf)[:5], "horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)}
-                if dia in dados_existentes: supabase.table("registros_ponto").update(payload).eq("id", reg['id']).execute()
-                else: supabase.table("registros_ponto").insert(payload).execute()
-                st.toast("Salvo!")
+        with st.expander(f"📅 {dia.strftime('%d/%m - %a')} {'(📄 Doc)' if reg.get('url_comprovante') else ''}"):
+            col_h, col_doc = st.columns([2, 1])
+            
+            with col_h:
+                st.write("**Horários**")
+                ce1, ce2, ce3, ce4 = st.columns(4)
+                ent = ce1.time_input("E", value=datetime.strptime(reg.get('entrada', "08:00"), "%H:%M"), key=f"e_{dia}")
+                sa = ce2.time_input("SA", value=datetime.strptime(reg.get('saida_almoco', "12:00"), "%H:%M"), key=f"sa_{dia}")
+                ra = ce3.time_input("RA", value=datetime.strptime(reg.get('retorno_almoco', "13:00"), "%H:%M"), key=f"ra_{dia}")
+                sf = ce4.time_input("SF", value=datetime.strptime(reg.get('saida', "17:00"), "%H:%M"), key=f"sf_{dia}")
+            
+            with col_doc:
+                st.write("**Justificativa/Atestado**")
+                arquivo = st.file_uploader("Subir Doc", type=['pdf', 'jpg', 'png'], key=f"file_{dia}")
+                tipo_doc = st.selectbox("Tipo", ["Nenhum", "Atestado Médico", "Declaração", "Outros"], key=f"tipo_{dia}")
+                
+                if reg.get('url_comprovante'):
+                    st.link_button("Ver Documento Atual", reg['url_comprovante'])
+
+            if st.button("Salvar Dia", key=f"save_{dia}"):
+                url_final = reg.get('url_comprovante')
+                
+                # Lógica de Upload para o Storage
+                if arquivo:
+                    file_path = f"{selecionado}/{dia}_{arquivo.name}"
+                    supabase.storage.from_("comprovantes").upload(file_path, arquivo.getvalue(), {"upsert": "true"})
+                    url_final = supabase.storage.from_("comprovantes").get_public_url(file_path)
+
+                total = calcular_horas(ent, sa, ra, sf)
+                payload = {
+                    "usuario": selecionado, "data": str(dia), 
+                    "entrada": str(ent)[:5], "saida_almoco": str(sa)[:5], 
+                    "retorno_almoco": str(ra)[:5], "saida": str(sf)[:5], 
+                    "horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2),
+                    "url_comprovante": url_final,
+                    "tipo_documento": tipo_doc
+                }
+                
+                if dia in dados_existentes:
+                    supabase.table("registros_ponto").update(payload).eq("id", reg['id']).execute()
+                else:
+                    supabase.table("registros_ponto").insert(payload).execute()
+                
+                st.success("Dados e documento salvos!")
+                st.rerun()
 
 # --- PÁGINA: CADASTRO DE FUNCIONÁRIOS ---
 elif pagina == "Cadastro de Funcionários":
