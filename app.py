@@ -55,54 +55,99 @@ with st.sidebar:
             mes = st.selectbox("Mês de Referência", list(range(1, 13)), index=hoje.month - 1)
             ano = st.number_input("Ano", value=hoje.year, step=1)
 
-# --- PÁGINA: BATER PONTO ---
+# --- PÁGINA: BATER PONTO (ESTILO DASHBOARD) ---
 if pagina == "Bater Ponto" and selecionado:
-    st.subheader(f"⏱️ Registro Real - {selecionado} ({info_func['tipo_contrato']})")
-    agora = datetime.now()
-    hoje_str = agora.strftime('%Y-%m-%d')
+    # Centralizando o conteúdo com colunas
+    _, col_central, _ = st.columns([1, 2, 1])
     
-    col_t1, col_t2 = st.columns(2)
-    col_t1.write(f"### 🕒 {agora.strftime('%H:%M:%S')}")
-    col_t2.write(f"### 📅 {agora.strftime('%d/%m/%Y')}")
+    with col_central:
+        st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {selecionado}!</h2>", unsafe_allow_html=True)
+        
+        # Card de Horário Atual
+        agora = datetime.now()
+        hoje_str = agora.strftime('%Y-%m-%d')
+        
+        st.markdown(f"""
+            <div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
+                <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d de %B de %Y')}</p>
+                <h1 style="margin: 0; font-size: 3.5rem;">{agora.strftime('%H:%M')}</h1>
+            </div>
+        """, unsafe_allow_html=True)
 
-    res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", hoje_str).execute()
-    reg_hoje = res.data[0] if res.data else None
+        # Busca dados de hoje
+        res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", hoje_str).execute()
+        reg_hoje = res.data[0] if res.data else None
 
-    proxima = "Entrada"
-    if reg_hoje:
-        if not reg_hoje.get('saida_almoco'): proxima = "Saída Almoço"
-        elif not reg_hoje.get('retorno_almoco'): proxima = "Retorno Almoço"
-        elif not reg_hoje.get('saida'): proxima = "Saída Final"
-        else: proxima = "Concluído"
+        # Lógica de Próxima Marcação
+        proxima = "Entrada"
+        cor_botao = "#28a745" # Verde
+        if reg_hoje:
+            if not reg_hoje.get('saida_almoco'): 
+                proxima = "Saída Almoço"
+                cor_botao = "#ffc107" # Amarelo
+            elif not reg_hoje.get('retorno_almoco'): 
+                proxima = "Retorno Almoço"
+                cor_botao = "#17a2b8" # Azul claro
+            elif not reg_hoje.get('saida'): 
+                proxima = "Saída Final"
+                cor_botao = "#dc3545" # Vermelho
+            else: proxima = "Concluído"
 
-    if proxima == "Concluído":
-        st.success("✅ Jornada de hoje concluída!")
-    else:
-        if st.button(f"REGISTRAR {proxima.upper()}", type="primary"):
-            hora_atual = agora.strftime('%H:%M')
-            if not reg_hoje:
-                payload = {"usuario": selecionado, "data": hoje_str, "entrada": hora_atual, "horas_extras": -8.0}
-                supabase.table("registros_ponto").insert(payload).execute()
-            else:
-                campo_map = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}
-                payload = {campo_map[proxima]: hora_atual}
-                if proxima == "Saída Final":
-                    e = datetime.strptime(reg_hoje['entrada'], "%H:%M").time()
-                    sa = datetime.strptime(reg_hoje['saida_almoco'], "%H:%M").time()
-                    ra = datetime.strptime(reg_hoje['retorno_almoco'], "%H:%M").time()
-                    total = calcular_horas(e, sa, ra, agora.time())
-                    payload["horas_trabalhadas"] = total
-                    payload["horas_extras"] = round(total - 8.0, 2)
-                supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
-            st.rerun()
+        # Botão estilizado
+        if proxima == "Concluído":
+            st.success("✨ Jornada finalizada! Bom descanso.")
+        else:
+            # CSS personalizado para o botão de batida
+            st.markdown(f"""
+                <style>
+                div.stButton > button:first-child {{
+                    background-color: {cor_botao};
+                    color: white;
+                    height: 80px;
+                    font-size: 20px;
+                    font-weight: bold;
+                    border-radius: 15px;
+                    border: none;
+                    transition: 0.3s;
+                }}
+                div.stButton > button:first-child:hover {{
+                    transform: scale(1.02);
+                    filter: brightness(1.1);
+                }}
+                </style>
+            """, unsafe_allow_html=True)
+            
+            if st.button(f"CLIQUE AQUI PARA REGISTRAR:\n{proxima.upper()}", use_container_width=True):
+                hora_atual = agora.strftime('%H:%M')
+                if not reg_hoje:
+                    payload = {"usuario": selecionado, "data": hoje_str, "entrada": hora_atual, "horas_extras": -8.0}
+                    supabase.table("registros_ponto").insert(payload).execute()
+                else:
+                    campo_map = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}
+                    payload = {campo_map[proxima]: hora_atual}
+                    if proxima == "Saída Final":
+                        e = datetime.strptime(reg_hoje['entrada'], "%H:%M").time()
+                        sa = datetime.strptime(reg_hoje['saida_almoco'], "%H:%M").time()
+                        ra = datetime.strptime(reg_hoje['retorno_almoco'], "%H:%M").time()
+                        total = calcular_horas(e, sa, ra, agora.time())
+                        payload["horas_trabalhadas"] = total
+                        payload["horas_extras"] = round(total - 8.0, 2)
+                    supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
+                st.balloons()
+                st.rerun()
 
-    if reg_hoje:
-        st.divider()
+        # Linha do tempo (Visualização do que já foi batido)
+        st.write("---")
+        st.write("### 📝 Resumo de Hoje")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Entrada", reg_hoje.get('entrada') or "--:--")
-        m2.metric("S. Almoço", reg_hoje.get('saida_almoco') or "--:--")
-        m3.metric("R. Almoço", reg_hoje.get('retorno_almoco') or "--:--")
-        m4.metric("Saída", reg_hoje.get('saida') or "--:--")
+        
+        def format_metric(valor):
+            return f"<p style='font-size: 1.2rem; font-weight: bold; color: #007BFF; margin:0;'>{valor or '--:--'}</p>"
+
+        with m1: st.markdown(f"Entrada<br>{format_metric(reg_hoje.get('entrada') if reg_hoje else None)}", unsafe_allow_html=True)
+        with m2: st.markdown(f"Almoço<br>{format_metric(reg_hoje.get('saida_almoco') if reg_hoje else None)}", unsafe_allow_html=True)
+        with m3: st.markdown(f"Retorno<br>{format_metric(reg_hoje.get('retorno_almoco') if reg_hoje else None)}", unsafe_allow_html=True)
+        with m4: st.markdown(f"Saída<br>{format_metric(reg_hoje.get('saida') if reg_hoje else None)}", unsafe_allow_html=True)
 
 # --- PÁGINA: FOLHA DE PONTO ---
 elif pagina == "Folha de Ponto" and selecionado:
