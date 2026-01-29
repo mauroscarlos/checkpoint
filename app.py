@@ -5,8 +5,8 @@ from datetime import datetime, date
 import calendar
 
 # 1. Conexão com o Banco de Dados
-URL = st.secrets["https://iorjkyxjjogqtjdlmyhv.supabase.co"]
-KEY = st.secrets["sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"]supabase = create_client(URL, KEY)
+URL = st.secrets "https://iorjkyxjjogqtjdlmyhv.supabase.co"
+KEY = st.secrets "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L" supabase = create_client(URL, KEY)
 
 st.set_page_config(page_title="MSCGYM - Gestão de Ponto", layout="wide")
 
