@@ -234,21 +234,64 @@ elif pagina == "Cadastro de Funcionários":
 
 # --- PÁGINA: RELATÓRIOS ---
 elif pagina == "Relatórios" and selecionado:
-    st.subheader(f"📊 Financeiro: {selecionado}")
+    st.subheader(f"📊 Central de Relatórios: {selecionado}")
+    
+    tipo_relatorio = st.tabs(["📄 Folha Mensal Detalhada", "💰 Banco de Horas Acumulado"])
+
+    # Busca todos os dados do funcionário
     res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).execute()
+    
     if res.data:
         df = pd.DataFrame(res.data)
         df['data'] = pd.to_datetime(df['data'])
+        # Filtra pelo mês e ano selecionados no menu lateral
         df_mes = df[(df['data'].dt.month == mes) & (df['data'].dt.year == int(ano))].sort_values("data")
-        
-        total_horas = df_mes['horas_trabalhadas'].sum()
-        pagamento_estimado = total_horas * info_func['valor_hora'] if info_func['tipo_contrato'] == "PJ" else info_func['salario_mensal']
 
-        c_r1, c_r2, c_r3 = st.columns(3)
-        c_r1.metric("Horas Trabalhadas", f"{total_horas:.2f} h")
-        c_r2.metric("Tipo Contrato", info_func['tipo_contrato'])
-        c_r3.metric("Previsão de Pagto", f"R$ {pagamento_estimado:.2f}")
-        
-        st.divider()
-        st.write("### Detalhes das Marcações")
-        st.dataframe(df_mes[['data', 'entrada', 'saida', 'horas_trabalhadas', 'horas_extras']], use_container_width=True)
+        # --- ABA 1: FOLHA MENSAL ---
+        with tipo_relatorio[0]:
+            st.markdown(f"### Espelho de Ponto - {mes:02d}/{int(ano)}")
+            
+            # Métricas rápidas do mês
+            c_m1, c_m2, c_m3 = st.columns(3)
+            total_trabalhado = df_mes['horas_trabalhadas'].sum()
+            c_m1.metric("Horas Trabalhadas", f"{total_trabalhado:.2f} h")
+            c_m2.metric("Saldo do Mês", f"{df_mes['horas_extras'].sum():.2f} h")
+            c_m3.metric("Documentos/Atestados", len(df_mes[df_mes['url_comprovante'].notna()]))
+
+            # Tabela formatada para exibição
+            df_display = df_mes.copy()
+            df_display['data'] = df_display['data'].dt.strftime('%d/%m/%Y')
+            
+            # Organizando colunas para o usuário
+            colunas_folha = ['data', 'entrada', 'saida_almoco', 'retorno_almoco', 'saida', 'horas_trabalhadas', 'horas_extras', 'tipo_documento']
+            st.dataframe(df_display[colunas_folha], use_container_width=True)
+
+            # Botão para baixar a Folha
+            csv_folha = df_display[colunas_folha].to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Baixar Espelho de Ponto (CSV)", csv_folha, f"folha_{selecionado}_{mes}.csv", "text/csv")
+
+        # --- ABA 2: BANCO DE HORAS ---
+        with tipo_relatorio[1]:
+            st.markdown("### Gestão de Banco de Horas")
+            
+            # Cálculo de Saldo Histórico (Geral, não só do mês)
+            saldo_geral = df['horas_extras'].sum()
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                st.metric("Saldo Acumulado Total", f"{saldo_geral:.2f} h", delta_color="normal")
+                st.info("O saldo acumulado considera todos os registros salvos desde o início do uso do sistema.")
+            
+            with col_b2:
+                # Cálculo financeiro baseado no valor/hora cadastrado
+                valor_devido = saldo_geral * info_func.get('valor_hora', 0)
+                st.metric("Valor em Banco (Estimado)", f"R$ {valor_devido:.2f}")
+
+            st.markdown("#### Evolução Mensal do Saldo")
+            # Agrupando por mês para ver a evolução
+            df['mes_ano'] = df['data'].dt.to_period('M').astype(str)
+            evolucao = df.groupby('mes_ano')['horas_extras'].sum().reset_index()
+            st.bar_chart(evolucao.set_index('mes_ano'))
+
+    else:
+        st.warning("Nenhum dado encontrado para gerar relatórios.")
