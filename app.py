@@ -233,6 +233,77 @@ elif pagina == "Cadastro de Funcionários":
                 st.rerun()
 
 # --- PÁGINA: RELATÓRIOS ---
+from fpdf import FPDF
+
+def gerar_pdf_folha(funcionario_info, df_mes, mes_ano):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Cabeçalho Estilizado
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "MSCGYM - CONTROLE DE PONTO", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(0, 5, f"Relatório de Frequência: {mes_ano}", ln=True, align="C")
+    pdf.ln(10)
+    
+    # Informações do Funcionário
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 8, f" Funcionário: {funcionario_info['nome']}", ln=True, fill=True)
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(95, 8, f" Cargo: {funcionario_info.get('cargo', 'N/A')}", border=0)
+    pdf.cell(95, 8, f" Contrato: {funcionario_info.get('tipo_contrato', 'N/A')}", ln=True)
+    pdf.ln(5)
+
+    # Tabela de Horários
+    pdf.set_font("Arial", "B", 9)
+    # Cabeçalho da Tabela
+    colunas = ["Data", "Entrada", "S.Alm", "R.Alm", "Saída", "Total", "Saldo"]
+    larguras = [25, 25, 25, 25, 25, 30, 30]
+    
+    for i, col in enumerate(colunas):
+        pdf.cell(larguras[i], 8, col, border=1, align="C", fill=True)
+    pdf.ln()
+
+    # Dados das Linhas
+    pdf.set_font("Arial", "", 9)
+    for _, row in df_mes.iterrows():
+        pdf.cell(larguras[0], 7, row['data'].strftime('%d/%m/%Y'), border=1, align="C")
+        pdf.cell(larguras[1], 7, str(row['entrada']), border=1, align="C")
+        pdf.cell(larguras[2], 7, str(row['saida_almoco']), border=1, align="C")
+        pdf.cell(larguras[3], 7, str(row['retorno_almoco']), border=1, align="C")
+        pdf.cell(larguras[4], 7, str(row['saida']), border=1, align="C")
+        pdf.cell(larguras[5], 7, f"{row['horas_trabalhadas']}h", border=1, align="C")
+        pdf.cell(larguras[6], 7, f"{row['horas_extras']:+.2f}h", border=1, align="C")
+        pdf.ln()
+
+    # Totais no Rodapé
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 10, f"Total de Horas no Mês: {df_mes['horas_trabalhadas'].sum():.2f}h", ln=True, align="R")
+    
+    # Linhas de Assinatura
+    pdf.ln(20)
+    pdf.cell(95, 0, "", border="T")
+    pdf.cell(5, 0, "")
+    pdf.cell(90, 0, "", border="T", ln=True)
+    pdf.cell(95, 10, "Assinatura do Funcionário", align="C")
+    pdf.cell(95, 10, "Responsável MSCGYM", align="C")
+
+    return pdf.output()
+
+# --- NO RELATÓRIO, ADICIONE O BOTÃO ---
+# Coloque isso dentro da Aba "Folha Mensal Detalhada" logo abaixo das métricas:
+
+if st.button("📄 Gerar Relatório em PDF"):
+    pdf_bytes = gerar_pdf_folha(info_func, df_mes, f"{mes:02d}/{int(ano)}")
+    st.download_button(
+        label="📥 Baixar PDF para Impressão",
+        data=pdf_bytes,
+        file_name=f"Folha_Ponto_{selecionado}_{mes}_{ano}.pdf",
+        mime="application/pdf"
+    )
+
 elif pagina == "Relatórios" and selecionado:
     st.subheader(f"📊 Central de Relatórios: {selecionado}")
     
