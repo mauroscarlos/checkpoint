@@ -4,8 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # 1. Conexão com o Supabase (Substitua pelos seus dados do painel Settings > API)
-URL = "SUA_URL_AQUI"
-KEY = "SUA_CHAVE_ANON_AQUI"
+URL = "postgresql://postgres:Tod0Poderos0#]@db.iorjkyxjjogqtjdlmyhv.supabase.co:5432/postgres"
+KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
 supabase = create_client(URL, KEY)
 
 st.title("⏱️ Controle de Ponto Inteligente")
