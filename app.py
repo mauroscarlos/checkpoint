@@ -1,83 +1,101 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
+import calendar
 
-# 1. Conexão (Puxe dos Secrets para ficar seguro)
+# 1. Conexão
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
 KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
 supabase = create_client(URL, KEY)
 
-st.set_page_config(page_title="Controle de Ponto", layout="wide")
+st.set_page_config(page_title="Folha de Ponto", layout="wide")
 
-st.title("⏱️ Controle de Ponto - MSCGYM")
-
-# Menu lateral para navegação
-menu = st.sidebar.selectbox("Ir para:", ["Registrar Ponto", "Consultar Histórico"])
-
-if menu == "Registrar Ponto":
-    with st.form("form_ponto", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            nome = st.text_input("Nome do Funcionário")
-            data = st.date_input("Data", datetime.now())
-        with col2:
-            ent = st.time_input("Entrada", value=datetime.strptime("08:00", "%H:%M"))
-            sai_alm = st.time_input("Saída Almoço", value=datetime.strptime("12:00", "%H:%M"))
+# Funções de Apoio
+def calcular_horas(e, s_a, r_a, s):
+    try:
+        # Cálculo simples em horas decimais
+        t1 = e.hour + e.minute/60
+        t2 = s_a.hour + s_a.minute/60
+        t3 = r_a.hour + r_a.minute/60
+        t4 = s.hour + s.minute/60
         
-        col3, col4 = st.columns(2)
-        with col3:
-            ret_alm = st.time_input("Retorno Almoço", value=datetime.strptime("13:00", "%H:%M"))
-        with col4:
-            sai = st.time_input("Saída Final", value=datetime.strptime("17:00", "%H:%M"))
+        total = (t2 - t1) + (t4 - t3)
+        return round(total, 2)
+    except:
+        return 0.0
 
-        btn_registrar = st.form_submit_button("Salvar Registro")
+st.title("📅 Folha de Ponto Mensal")
 
-    if btn_registrar:
-        # Lógica de cálculo
-        t_entrada = datetime.combine(data, ent)
-        t_saida_alm = datetime.combine(data, sai_alm)
-        t_retorno_alm = datetime.combine(data, ret_alm)
-        t_saida_final = datetime.combine(data, sai)
+# Seleção de Filtros
+col_filtros1, col_filtros2, col_filtros3 = st.columns(3)
+with col_filtros1:
+    funcionario = st.text_input("Nome do Funcionário", value="Mauro")
+with col_filtros2:
+    hoje = date.today()
+    mes = st.selectbox("Mês", list(range(1, 13)), index=hoje.month - 1)
+with col_filtros3:
+    ano = st.number_input("Ano", value=hoje.year)
 
-        # Horas totais - Almoço
-        turno_1 = (t_saida_alm - t_entrada).total_seconds() / 3600
-        turno_2 = (t_saida_final - t_retorno_alm).total_seconds() / 3600
-        total_horas = turno_1 + turno_2
-        
-        # Banco de horas (Considerando jornada de 8h)
-        # Se trabalhar 9h, sobra 1h extra. Se trabalhar 7h, fica -1h.
-        saldo = total_horas - 8.0
+# Gerar dias do mês selecionado
+num_dias = calendar.monthrange(ano, mes)[1]
+dias_do_mes = [date(ano, mes, d) for d in range(1, num_dias + 1)]
 
-        dados = {
-            "usuario": nome,
-            "data": str(data),
-            "entrada": str(ent),
-            "saida_almoco": str(sai_alm),
-            "retorno_almoco": str(ret_alm),
-            "saida": str(sai),
-            "horas_trabalhadas": round(total_horas, 2),
-            "horas_extras": round(saldo, 2)
-        }
+# Buscar dados existentes no Supabase para este funcionário/mês
+res = supabase.table("registros_ponto").select("*").eq("usuario", funcionario).execute()
+dados_existentes = {datetime.strptime(d['data'], '%Y-%m-%d').date(): d for d in res.data}
 
-        try:
-            supabase.table("registros_ponto").insert(dados).execute()
-            st.success(f"Ponto de {nome} registrado com sucesso!")
-            st.info(f"Horas: {total_horas:.2f}h | Saldo: {saldo:+.2f}h")
-        except Exception as e:
-            st.error(f"Erro ao salvar: {e}")
+st.divider()
 
-elif menu == "Consultar Histórico":
-    st.subheader("📋 Registros Armazenados")
-    res = supabase.table("registros_ponto").select("*").execute()
+# Cabeçalho da Tabela
+c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 2, 2, 2, 2, 1.5, 1.5])
+c1.write("**Data**")
+c2.write("**Entrada**")
+c3.write("**Saída Almoço**")
+c4.write("**Retorno Almoço**")
+c5.write("**Saída Final**")
+c6.write("**Total**")
+c7.write("**Ação**")
+
+# Gerar as linhas horizontais
+for dia in dias_do_mes:
+    # Se já existir dado, carrega. Se não, valores padrão.
+    tem_dado = dia in dados_existentes
+    registro = dados_existentes.get(dia, {})
     
-    if res.data:
-        df = pd.DataFrame(res.data)
-        # Ajustando a ordem das colunas para ficar legível
-        df = df[['usuario', 'data', 'entrada', 'saida', 'horas_trabalhadas', 'horas_extras']]
-        st.dataframe(df, use_container_width=True)
+    with st.container():
+        col_data, col_e, col_sa, col_ra, col_sf, col_total, col_btn = st.columns([1.5, 2, 2, 2, 2, 1.5, 1.5])
         
-        # Resumo do Banco de Horas
-        total_banco = df['horas_extras'].sum()
-        st.divider()
-        st.metric("Saldo Geral do Banco de Horas", f"{total_banco:.2f} Horas")
+        col_data.write(dia.strftime("%d/%m (%a)"))
+        
+        # Campos de entrada alinhados
+        ent = col_e.time_input("Ent", value=datetime.strptime(registro.get('entrada', "08:00"), "%H:%M"), key=f"e_{dia}", label_visibility="collapsed")
+        sai_a = col_sa.time_input("S_A", value=datetime.strptime(registro.get('saida_almoco', "12:00"), "%H:%M"), key=f"sa_{dia}", label_visibility="collapsed")
+        ret_a = col_ra.time_input("R_A", value=datetime.strptime(registro.get('retorno_almoco', "13:00"), "%H:%M"), key=f"ra_{dia}", label_visibility="collapsed")
+        sai_f = col_sf.time_input("S_F", value=datetime.strptime(registro.get('saida', "17:00"), "%H:%M"), key=f"sf_{dia}", label_visibility="collapsed")
+        
+        # Cálculo automático na linha
+        total = calcular_horas(ent, sai_a, ret_a, sai_f)
+        col_total.write(f"{total}h")
+        
+        # Botão de Salvar para cada linha
+        if col_btn.button("💾", key=f"btn_{dia}"):
+            payload = {
+                "usuario": funcionario,
+                "data": str(dia),
+                "entrada": str(ent),
+                "saida_almoco": str(sai_a),
+                "retorno_almoco": str(ret_a),
+                "saida": str(sai_f),
+                "horas_trabalhadas": total,
+                "horas_extras": round(total - 8.0, 2)
+            }
+            
+            if tem_dado:
+                # Atualiza registro existente
+                supabase.table("registros_ponto").update(payload).eq("id", registro['id']).execute()
+            else:
+                # Cria novo
+                supabase.table("registros_ponto").insert(payload).execute()
+            
+            st.toast(f"Dia {dia.day} salvo!", icon="✅")
