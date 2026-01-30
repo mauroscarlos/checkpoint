@@ -105,6 +105,66 @@ with st.sidebar:
             mes = st.selectbox("Mês de Referência", list(range(1, 13)), index=hoje.month - 1)
             ano = st.number_input("Ano", value=hoje.year, step=1)
 
+# --- PÁGINA: MANUTENÇÃO DE PONTO (ADMIN) ---
+elif pagina == "Manutenção de Ponto" and selecionado:
+    st.subheader(f"🛠️ Manutenção de Registros: {selecionado}")
+    st.info("Utilize esta tela para corrigir batidas erradas ou inserir dias esquecidos.")
+
+    # Filtro de data específico para manutenção
+    col_data_edit = st.date_input("Selecione o dia que deseja ajustar", value=date.today())
+    
+    # Busca o registro desse dia específico
+    res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", str(col_data_edit)).execute()
+    reg_edit = res.data[0] if res.data else None
+
+    with st.form("form_manutencao"):
+        st.write(f"### Ajustando dia: {col_data_edit.strftime('%d/%m/%Y')}")
+        
+        c1, c2 = st.columns(2)
+        # Se não existir registro, sugere horários padrão
+        e = c1.time_input("Entrada", value=datetime.strptime(reg_edit.get('entrada', "08:00") if reg_edit else "08:00", "%H:%M"))
+        sa = c2.time_input("Saída Almoço", value=datetime.strptime(reg_edit.get('saida_almoco', "12:00") if reg_edit else "12:00", "%H:%M"))
+        
+        c3, c4 = st.columns(2)
+        ra = c3.time_input("Retorno Almoço", value=datetime.strptime(reg_edit.get('retorno_almoco', "13:00") if reg_edit else "13:00", "%H:%M"))
+        s = c4.time_input("Saída Final", value=datetime.strptime(reg_edit.get('saida', "17:00") if reg_edit else "17:00", "%H:%M"))
+        
+        obs = st.text_area("Motivo da Alteração (Opcional)", value=reg_edit.get('tipo_documento', "") if reg_edit else "")
+
+        if st.form_submit_button("🔨 SALVAR ALTERAÇÕES", use_container_width=True):
+            total = calcular_horas(e, sa, ra, s)
+            payload = {
+                "usuario": selecionado,
+                "data": str(col_data_edit),
+                "entrada": str(e)[:5],
+                "saida_almoco": str(sa)[:5],
+                "retorno_almoco": str(ra)[:5],
+                "saida": str(s)[:5],
+                "horas_trabalhadas": total,
+                "horas_extras": round(total - 8.0, 2),
+                "tipo_documento": obs # Usando este campo para observações de manutenção
+            }
+
+            if reg_edit:
+                # Atualiza se já existe
+                supabase.table("registros_ponto").update(payload).eq("id", reg_edit['id']).execute()
+                st.success("Registro atualizado com sucesso!")
+            else:
+                # Insere se for um dia novo
+                supabase.table("registros_ponto").insert(payload).execute()
+                st.success("Novo registro criado com sucesso!")
+            
+            st.rerun()
+
+    # Opção de Excluir Registro
+    if reg_edit:
+        st.divider()
+        with st.expander("⚠️ Zona de Perigo"):
+            if st.button("EXCLUIR REGISTRO DESTE DIA", type="secondary"):
+                supabase.table("registros_ponto").delete().eq("id", reg_edit['id']).execute()
+                st.warning("Registro apagado.")
+                st.rerun()
+
 # --- PÁGINA: BATER PONTO ---
 if pagina == "Bater Ponto" and selecionado:
     _, col_central, _ = st.columns([1, 2, 1])
