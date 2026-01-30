@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, date
 import calendar
 from fpdf import FPDF
+import pytz
 
 # 1. Conexão com o Banco de Dados (Usando Secrets para segurança)
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
@@ -109,7 +110,8 @@ if pagina == "Bater Ponto" and selecionado:
     _, col_central, _ = st.columns([1, 2, 1])
     with col_central:
         st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {selecionado}!</h2>", unsafe_allow_html=True)
-        agora = datetime.now()
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        agora = datetime.now(fuso_br)
         hoje_str = agora.strftime('%Y-%m-%d')
         st.markdown(f"""<div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
             <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d de %B de %Y')}</p>
