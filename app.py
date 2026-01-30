@@ -8,8 +8,7 @@ from fpdf import FPDF
 
 # 1. Conexão com o Banco de Dados
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
-KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
-supabase = create_client(URL, KEY)
+KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"supabase = create_client(URL, KEY)
 
 st.set_page_config(page_title="MSCGYM - Gestão de Ponto", layout="wide")
 
