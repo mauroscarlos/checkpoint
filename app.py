@@ -3,15 +3,18 @@ from supabase import create_client
 import pandas as pd
 from datetime import datetime, date
 import calendar
-from fpdf import FPDF
 import pytz
+from fpdf import FPDF
 
-# 1. Conexão com o Banco de Dados (Usando Secrets para segurança)
+# 1. Conexão com o Banco de Dados
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
 KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
 supabase = create_client(URL, KEY)
 
 st.set_page_config(page_title="MSCGYM - Gestão de Ponto", layout="wide")
+
+# Fuso Horário de Brasília
+fuso_br = pytz.timezone('America/Sao_Paulo')
 
 # --- CSS para Interface Compacta ---
 st.markdown("""
@@ -37,13 +40,11 @@ def calcular_horas(e, s_a, r_a, s):
 def gerar_pdf_folha(funcionario_info, df_mes, mes_ano):
     pdf = FPDF()
     pdf.add_page()
-    
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, "MSCGYM - CONTROLE DE PONTO", ln=True, align="C")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 5, f"Relatório de Frequência: {mes_ano}", ln=True, align="C")
     pdf.ln(10)
-    
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 8, f" Funcionário: {funcionario_info['nome']}", ln=True, fill=True)
@@ -51,15 +52,12 @@ def gerar_pdf_folha(funcionario_info, df_mes, mes_ano):
     pdf.cell(95, 8, f" Cargo: {funcionario_info.get('cargo', 'N/A')}", border=0)
     pdf.cell(95, 8, f" Contrato: {funcionario_info.get('tipo_contrato', 'N/A')}", ln=True)
     pdf.ln(5)
-
     pdf.set_font("Helvetica", "B", 9)
     colunas = ["Data", "Entrada", "S.Alm", "R.Alm", "Saída", "Total", "Saldo"]
     larguras = [25, 25, 25, 25, 25, 30, 30]
-    
     for i, col in enumerate(colunas):
         pdf.cell(larguras[i], 8, col, border=1, align="C", fill=True)
     pdf.ln()
-
     pdf.set_font("Helvetica", "", 9)
     for _, row in df_mes.iterrows():
         pdf.cell(larguras[0], 7, row['data'].strftime('%d/%m/%Y'), border=1, align="C")
@@ -70,30 +68,25 @@ def gerar_pdf_folha(funcionario_info, df_mes, mes_ano):
         pdf.cell(larguras[5], 7, f"{row['horas_trabalhadas']}h", border=1, align="C")
         pdf.cell(larguras[6], 7, f"{row['horas_extras']:+.2f}h", border=1, align="C")
         pdf.ln()
-
     pdf.ln(5)
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 10, f"Total de Horas no Mês: {df_mes['horas_trabalhadas'].sum():.2f}h", ln=True, align="R")
-    
     pdf.ln(20)
     pdf.cell(95, 0, "", border="T")
     pdf.cell(5, 0, "")
     pdf.cell(90, 0, "", border="T", ln=True)
     pdf.cell(95, 10, "Assinatura do Funcionário", align="C")
     pdf.cell(95, 10, "Responsável MSCGYM", align="C")
-
     return pdf.output()
 
 # --- MENU LATERAL ---
 with st.sidebar:
     st.title("🚀 MSCGYM Ponto")
-    pagina = st.radio("Navegação", ["Bater Ponto", "Folha de Ponto", "Cadastro de Funcionários", "Relatórios"])
+    pagina = st.radio("Navegação", ["Bater Ponto", "Folha de Ponto", "Manutenção de Ponto", "Cadastro de Funcionários", "Relatórios"])
     st.divider()
-    
     res_func = supabase.table("funcionarios").select("*").execute()
     dados_func = res_func.data if res_func.data else []
     lista_nomes = [f['nome'] for f in dados_func]
-    
     if pagina != "Cadastro de Funcionários":
         if not lista_nomes:
             st.warning("⚠️ Cadastre um funcionário primeiro!")
@@ -101,85 +94,22 @@ with st.sidebar:
         else:
             selecionado = st.selectbox("Funcionário Ativo", lista_nomes)
             info_func = next(item for item in dados_func if item["nome"] == selecionado)
-            hoje = date.today()
+            hoje = datetime.now(fuso_br).date()
             mes = st.selectbox("Mês de Referência", list(range(1, 13)), index=hoje.month - 1)
             ano = st.number_input("Ano", value=hoje.year, step=1)
-
-# --- PÁGINA: MANUTENÇÃO DE PONTO (ADMIN) ---
-elif pagina == "Manutenção de Ponto" and selecionado:
-    st.subheader(f"🛠️ Manutenção de Registros: {selecionado}")
-    st.info("Utilize esta tela para corrigir batidas erradas ou inserir dias esquecidos.")
-
-    # Filtro de data específico para manutenção
-    col_data_edit = st.date_input("Selecione o dia que deseja ajustar", value=date.today())
-    
-    # Busca o registro desse dia específico
-    res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", str(col_data_edit)).execute()
-    reg_edit = res.data[0] if res.data else None
-
-    with st.form("form_manutencao"):
-        st.write(f"### Ajustando dia: {col_data_edit.strftime('%d/%m/%Y')}")
-        
-        c1, c2 = st.columns(2)
-        # Se não existir registro, sugere horários padrão
-        e = c1.time_input("Entrada", value=datetime.strptime(reg_edit.get('entrada', "08:00") if reg_edit else "08:00", "%H:%M"))
-        sa = c2.time_input("Saída Almoço", value=datetime.strptime(reg_edit.get('saida_almoco', "12:00") if reg_edit else "12:00", "%H:%M"))
-        
-        c3, c4 = st.columns(2)
-        ra = c3.time_input("Retorno Almoço", value=datetime.strptime(reg_edit.get('retorno_almoco', "13:00") if reg_edit else "13:00", "%H:%M"))
-        s = c4.time_input("Saída Final", value=datetime.strptime(reg_edit.get('saida', "17:00") if reg_edit else "17:00", "%H:%M"))
-        
-        obs = st.text_area("Motivo da Alteração (Opcional)", value=reg_edit.get('tipo_documento', "") if reg_edit else "")
-
-        if st.form_submit_button("🔨 SALVAR ALTERAÇÕES", use_container_width=True):
-            total = calcular_horas(e, sa, ra, s)
-            payload = {
-                "usuario": selecionado,
-                "data": str(col_data_edit),
-                "entrada": str(e)[:5],
-                "saida_almoco": str(sa)[:5],
-                "retorno_almoco": str(ra)[:5],
-                "saida": str(s)[:5],
-                "horas_trabalhadas": total,
-                "horas_extras": round(total - 8.0, 2),
-                "tipo_documento": obs # Usando este campo para observações de manutenção
-            }
-
-            if reg_edit:
-                # Atualiza se já existe
-                supabase.table("registros_ponto").update(payload).eq("id", reg_edit['id']).execute()
-                st.success("Registro atualizado com sucesso!")
-            else:
-                # Insere se for um dia novo
-                supabase.table("registros_ponto").insert(payload).execute()
-                st.success("Novo registro criado com sucesso!")
-            
-            st.rerun()
-
-    # Opção de Excluir Registro
-    if reg_edit:
-        st.divider()
-        with st.expander("⚠️ Zona de Perigo"):
-            if st.button("EXCLUIR REGISTRO DESTE DIA", type="secondary"):
-                supabase.table("registros_ponto").delete().eq("id", reg_edit['id']).execute()
-                st.warning("Registro apagado.")
-                st.rerun()
 
 # --- PÁGINA: BATER PONTO ---
 if pagina == "Bater Ponto" and selecionado:
     _, col_central, _ = st.columns([1, 2, 1])
     with col_central:
         st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {selecionado}!</h2>", unsafe_allow_html=True)
-        fuso_br = pytz.timezone('America/Sao_Paulo')
         agora = datetime.now(fuso_br)
         hoje_str = agora.strftime('%Y-%m-%d')
         st.markdown(f"""<div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
             <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d de %B de %Y')}</p>
             <h1 style="margin: 0; font-size: 3.5rem;">{agora.strftime('%H:%M')}</h1></div>""", unsafe_allow_html=True)
-        
         res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", hoje_str).execute()
         reg_hoje = res.data[0] if res.data else None
-        
         proxima = "Entrada"
         cor_botao = "#28a745"
         if reg_hoje:
@@ -187,11 +117,10 @@ if pagina == "Bater Ponto" and selecionado:
             elif not reg_hoje.get('retorno_almoco'): proxima, cor_botao = "Retorno Almoço", "#17a2b8"
             elif not reg_hoje.get('saida'): proxima, cor_botao = "Saída Final", "#dc3545"
             else: proxima = "Concluído"
-
         if proxima == "Concluído":
             st.success("✨ Jornada finalizada!")
         else:
-            st.markdown(f"<style>div.stButton > button {{ background-color: {cor_botao}; color: white; height: 80px; font-weight: bold; border-radius: 15px; }}</style>", unsafe_allow_html=True)
+            st.markdown(f"<style>div.stButton > button {{ background-color: {cor_botao} !important; color: white !important; height: 80px; font-weight: bold; border-radius: 15px; }}</style>", unsafe_allow_html=True)
             if st.button(f"REGISTRAR {proxima.upper()}", use_container_width=True):
                 hora_atual = agora.strftime('%H:%M')
                 if not reg_hoje:
@@ -206,8 +135,7 @@ if pagina == "Bater Ponto" and selecionado:
                         total = calcular_horas(e, sa, ra, agora.time())
                         payload.update({"horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)})
                     supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
-                st.balloons()
-                st.rerun()
+                st.balloons(); st.rerun()
 
 # --- PÁGINA: FOLHA DE PONTO ---
 elif pagina == "Folha de Ponto" and selecionado:
@@ -216,7 +144,6 @@ elif pagina == "Folha de Ponto" and selecionado:
     dias_do_mes = [date(int(ano), mes, d) for d in range(1, num_dias + 1)]
     res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).execute()
     dados_existentes = {datetime.strptime(d['data'], '%Y-%m-%d').date(): d for d in res.data}
-
     for dia in dias_do_mes:
         reg = dados_existentes.get(dia, {})
         with st.expander(f"📅 {dia.strftime('%d/%m - %a')} {'(📄 Doc)' if reg.get('url_comprovante') else ''}"):
@@ -230,7 +157,6 @@ elif pagina == "Folha de Ponto" and selecionado:
             with col_doc:
                 arquivo = st.file_uploader("Subir Doc", type=['pdf', 'jpg', 'png'], key=f"file_{dia}")
                 tipo_doc = st.selectbox("Tipo", ["Nenhum", "Atestado Médico", "Declaração", "Outros"], key=f"tipo_{dia}")
-            
             if st.button("Salvar Dia", key=f"save_{dia}"):
                 url_final = reg.get('url_comprovante')
                 if arquivo:
@@ -243,16 +169,38 @@ elif pagina == "Folha de Ponto" and selecionado:
                 else: supabase.table("registros_ponto").insert(payload).execute()
                 st.success("Salvo!"); st.rerun()
 
+# --- PÁGINA: MANUTENÇÃO DE PONTO ---
+elif pagina == "Manutenção de Ponto" and selecionado:
+    st.subheader(f"🛠️ Manutenção: {selecionado}")
+    col_data_edit = st.date_input("Selecione o dia", value=datetime.now(fuso_br).date())
+    res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", str(col_data_edit)).execute()
+    reg_edit = res.data[0] if res.data else None
+    with st.form("form_manutencao"):
+        c1, c2 = st.columns(2)
+        e = c1.time_input("Entrada", value=datetime.strptime(reg_edit.get('entrada', "08:00") if reg_edit else "08:00", "%H:%M"))
+        sa = c2.time_input("Saída Almoço", value=datetime.strptime(reg_edit.get('saida_almoco', "12:00") if reg_edit else "12:00", "%H:%M"))
+        c3, c4 = st.columns(2)
+        ra = c3.time_input("Retorno Almoço", value=datetime.strptime(reg_edit.get('retorno_almoco', "13:00") if reg_edit else "13:00", "%H:%M"))
+        sf = c4.time_input("Saída Final", value=datetime.strptime(reg_edit.get('saida', "17:00") if reg_edit else "17:00", "%H:%M"))
+        if st.form_submit_button("🔨 SALVAR"):
+            total = calcular_horas(e, sa, ra, sf)
+            payload = {"usuario": selecionado, "data": str(col_data_edit), "entrada": str(e)[:5], "saida_almoco": str(sa)[:5], "retorno_almoco": str(ra)[:5], "saida": str(sf)[:5], "horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)}
+            if reg_edit: supabase.table("registros_ponto").update(payload).eq("id", reg_edit['id']).execute()
+            else: supabase.table("registros_ponto").insert(payload).execute()
+            st.success("Ajustado!"); st.rerun()
+    if reg_edit:
+        if st.button("❌ EXCLUIR REGISTRO"):
+            supabase.table("registros_ponto").delete().eq("id", reg_edit['id']).execute()
+            st.warning("Apagado!"); st.rerun()
+
 # --- PÁGINA: CADASTRO ---
 elif pagina == "Cadastro de Funcionários":
     st.subheader("👤 Cadastro")
     with st.form("cad_func", clear_on_submit=True):
         c1, c2 = st.columns(2)
-        n = c1.text_input("Nome")
-        car = c2.text_input("Cargo")
+        n = c1.text_input("Nome"); car = c2.text_input("Cargo")
         tipo = st.selectbox("Contrato", ["CLT", "PJ"])
-        sal = st.number_input("Salário", min_value=0.0)
-        vh = st.number_input("Valor/Hora", min_value=0.0)
+        sal = st.number_input("Salário", min_value=0.0); vh = st.number_input("Valor/Hora", min_value=0.0)
         if st.form_submit_button("Salvar"):
             supabase.table("funcionarios").insert({"nome": n, "cargo": car, "tipo_contrato": tipo, "salario_mensal": sal, "valor_hora": vh}).execute()
             st.success("Cadastrado!"); st.rerun()
@@ -262,26 +210,18 @@ elif pagina == "Relatórios" and selecionado:
     st.subheader(f"📊 Relatórios: {selecionado}")
     tabs = st.tabs(["📄 Folha Mensal", "💰 Banco de Horas"])
     res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).execute()
-    
     if res.data:
         df = pd.DataFrame(res.data)
         df['data'] = pd.to_datetime(df['data'])
         df_mes = df[(df['data'].dt.month == mes) & (df['data'].dt.year == int(ano))].sort_values("data")
-
         with tabs[0]:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Total Horas", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
-            c2.metric("Saldo Mês", f"{df_mes['horas_extras'].sum():.2f}h")
-            
-            # BOTÃO DE PDF DENTRO DO RELATÓRIO
-            if st.button("📄 Gerar Relatório em PDF"):
-                pdf_bytes = gerar_pdf_folha(info_func, df_mes, f"{mes:02d}/{int(ano)}")
-                st.download_button("📥 Baixar PDF", pdf_bytes, f"Folha_{selecionado}.pdf", "application/pdf")
-            
+            c1.metric("Horas", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
+            c2.metric("Saldo", f"{df_mes['horas_extras'].sum():.2f}h")
+            pdf_bytes = gerar_pdf_folha(info_func, df_mes, f"{mes:02d}/{int(ano)}")
+            st.download_button("📥 Baixar PDF", pdf_bytes, f"Folha_{selecionado}.pdf", "application/pdf")
             st.dataframe(df_mes[['data', 'entrada', 'saida', 'horas_trabalhadas', 'horas_extras', 'tipo_documento']], use_container_width=True)
-
         with tabs[1]:
             saldo_total = df['horas_extras'].sum()
-            st.metric("Saldo Geral Acumulado", f"{saldo_total:.2f}h")
-            v_banco = saldo_total * info_func.get('valor_hora', 0)
-            st.metric("Valor Estimado", f"R$ {v_banco:.2f}")
+            st.metric("Saldo Geral", f"{saldo_total:.2f}h")
+            st.metric("Valor Estimado", f"R$ {saldo_total * info_func.get('valor_hora', 0):.2f}")
