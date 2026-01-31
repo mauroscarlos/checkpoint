@@ -87,127 +87,47 @@ with st.sidebar:
 # --- LÓGICA DAS PÁGINAS ---
 
 # 1. PÁGINA: BATER PONTO
-if pagina == "Bater Ponto":
-    _, col_central, _ = st.columns([1, 2, 1])
-    with col_central:
-        <style>
+
+# --- CSS PARA INTERFACE PROFISSIONAL ---
+st.markdown("""
+<style>
     /* Estilização Geral */
     [data-testid="column"] { padding: 0px 5px !important; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e0e0e0; }
     
-    /* Transformando o Radio Button em Menu de Botões */
-    div[data-testid="stSidebarNav"] { padding-top: 20px; }
-    
-    /* Esconde a bolinha original */
-    div[data-testid="stWidgetLabel"] p { font-weight: bold; color: #555; }
-    div[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-size: 1.1rem; }
-    
-    /* Estilo dos itens do menu */
-    div[data-testid="stSidebar"] .stRadio > div {
-        gap: 10px;
+    /* REMOVENDO AS BOLINHAS DO MENU */
+    div[role="radiogroup"] span[data-baseweb="radio"] {
+        display: none !important;
     }
     
-    div[data-testid="stSidebar"] .stRadio label {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 12px 20px !important;
-        border: 1px solid #eeeeee;
-        transition: all 0.3s ease;
-        width: 100%;
-        cursor: pointer;
+    /* TRANSFORMANDO O TEXTO EM BOTÕES */
+    div[role="radiogroup"] label {
+        background-color: #f1f3f5 !important;
+        border-radius: 8px !important;
+        padding: 10px 15px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid #d1d3d4 !important;
+        transition: all 0.3s ease !important;
+        display: block !important;
+        width: 100% !important;
     }
 
-    /* Efeito ao passar o mouse */
-    div[data-testid="stSidebar"] .stRadio label:hover {
-        background-color: #e3f2fd;
-        border-color: #007BFF;
+    /* EFEITO AO PASSAR O MOUSE */
+    div[role="radiogroup"] label:hover {
+        background-color: #e9ecef !important;
+        border-color: #007BFF !important;
         transform: translateX(5px);
     }
 
-    /* Item Selecionado */
-    div[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input:checked + label {
+    /* ITEM SELECIONADO (AZUL MSCGYM) */
+    div[role="radiogroup"] input:checked + label {
         background-color: #007BFF !important;
         color: white !important;
         border-color: #0056b3 !important;
-        font-weight: bold;
-        box-shadow: 0px 4px 10px rgba(0, 123, 255, 0.3);
+        font-weight: bold !important;
     }
-
-    /* Esconde o círculo (radio) */
-    div[data-testid="stSidebar"] [data-testid="stBlock"] div[role="radiogroup"] div[data-testid="stMarkdownContainer"] {
-        display: none;
-    }
-    
-    div[role="radiogroup"] span[data-baseweb="radio"] {
-        display: none;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# 2. PÁGINA: MANUTENÇÃO (SÓ ADMIN)
-elif pagina == "Manutenção de Ponto" and eh_admin:
-    st.subheader("🛠️ Manutenção Administrativa")
-    
-    # BUSCA A LISTA DE FUNCIONÁRIOS NA HORA (Evita o erro NameError)
-    res_f_manut = supabase.table("funcionarios").select("nome").execute()
-    lista_nomes_manut = [f['nome'] for f in res_f_manut.data] if res_f_manut.data else []
-    
-    col_func, col_data = st.columns(2)
-    with col_func:
-        alvo = st.selectbox("Selecione o Funcionário", lista_nomes_manut)
-    with col_data:
-        dia_m = st.date_input("Data do Ajuste", value=datetime.now(fuso_br).date())
-    
-    # Busca o registro existente para o funcionário e dia selecionados
-    res_e = supabase.table("registros_ponto").select("*").eq("usuario", alvo).eq("data", str(dia_m)).execute()
-    reg_e = res_e.data[0] if res_e.data else None
-    
-    st.divider()
-    
-    with st.form("form_manutencao_horizontal"):
-        st.write(f"### 📋 Ajuste de Horários: {alvo}")
-        st.caption(f"Data: {dia_m.strftime('%d/%m/%Y')}")
-        
-        # LINHA HORIZONTAL COM AJUSTE DE MINUTOS
-        c1, c2, c3, c4 = st.columns(4)
-        
-        with c1:
-            h_e = st.time_input("📥 Entrada", 
-                               value=datetime.strptime(reg_e.get('entrada', "08:00") if reg_e else "08:00", "%H:%M").time())
-        with c2:
-            h_sa = st.time_input("☕ Saída Almoço", 
-                                value=datetime.strptime(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00", "%H:%M").time())
-        with c3:
-            h_ra = st.time_input("🔙 Retorno Almoço", 
-                                value=datetime.strptime(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00", "%H:%M").time())
-        with c4:
-            h_s = st.time_input("🚪 Saída Final", 
-                               value=datetime.strptime(reg_e.get('saida', "17:00") if reg_e else "17:00", "%H:%M").time())
-        
-        st.write("") 
-        
-        if st.form_submit_button("💾 SALVAR MANUTENÇÃO", use_container_width=True):
-            # Cálculo de horas considerando os minutos exatos
-            t_trab = calcular_horas(h_e, h_sa, h_ra, h_s)
-            
-            p_update = {
-                "usuario": alvo, 
-                "data": str(dia_m), 
-                "entrada": h_e.strftime("%H:%M"), 
-                "saida_almoco": h_sa.strftime("%H:%M"), 
-                "retorno_almoco": h_ra.strftime("%H:%M"), 
-                "saida": h_s.strftime("%H:%M"), 
-                "horas_trabalhadas": t_trab, 
-                "horas_extras": round(t_trab - 8.0, 2)
-            }
-            
-            if reg_e:
-                supabase.table("registros_ponto").update(p_update).eq("id", reg_e['id']).execute()
-            else:
-                supabase.table("registros_ponto").insert(p_update).execute()
-                
-            st.success(f"✅ Ajustado para {t_trab}h!")
-            st.rerun()
+</style>
+""", unsafe_allow_html=True)
 
     # Opção de excluir
     if reg_e:
