@@ -90,43 +90,59 @@ with st.sidebar:
 if pagina == "Bater Ponto":
     _, col_central, _ = st.columns([1, 2, 1])
     with col_central:
-        st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {u_logado['nome']}!</h2>", unsafe_allow_html=True)
-        agora = datetime.now(fuso_br)
-        hoje_str = agora.strftime('%Y-%m-%d')
-        st.markdown(f"""<div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
-            <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d/%m/%Y')}</p>
-            <h1 style="margin: 0; font-size: 3.5rem;">{agora.strftime('%H:%M')}</h1></div>""", unsafe_allow_html=True)
-        
-        res = supabase.table("registros_ponto").select("*").eq("usuario", u_logado['nome']).eq("data", hoje_str).execute()
-        reg_hoje = res.data[0] if res.data else None
-        
-        proxima = "Entrada"
-        cor_b = "#28a745"
-        if reg_hoje:
-            if not reg_hoje.get('saida_almoco'): proxima, cor_b = "Saída Almoço", "#ffc107"
-            elif not reg_hoje.get('retorno_almoco'): proxima, cor_b = "Retorno Almoço", "#17a2b8"
-            elif not reg_hoje.get('saida'): proxima, cor_b = "Saída Final", "#dc3545"
-            else: proxima = "Concluído"
+        <style>
+    /* Estilização Geral */
+    [data-testid="column"] { padding: 0px 5px !important; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e0e0e0; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    
+    /* Transformando o Radio Button em Menu de Botões */
+    div[data-testid="stSidebarNav"] { padding-top: 20px; }
+    
+    /* Esconde a bolinha original */
+    div[data-testid="stWidgetLabel"] p { font-weight: bold; color: #555; }
+    div[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-size: 1.1rem; }
+    
+    /* Estilo dos itens do menu */
+    div[data-testid="stSidebar"] .stRadio > div {
+        gap: 10px;
+    }
+    
+    div[data-testid="stSidebar"] .stRadio label {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 12px 20px !important;
+        border: 1px solid #eeeeee;
+        transition: all 0.3s ease;
+        width: 100%;
+        cursor: pointer;
+    }
 
-        if proxima == "Concluído":
-            st.success("✅ Jornada finalizada!")
-        else:
-            st.markdown(f"<style>div.stButton > button {{ background-color: {cor_b} !important; color: white !important; height: 80px; font-weight: bold; border-radius: 15px; }}</style>", unsafe_allow_html=True)
-            if st.button(f"REGISTRAR {proxima.upper()}", use_container_width=True):
-                hora_at = agora.strftime('%H:%M')
-                if not reg_hoje:
-                    supabase.table("registros_ponto").insert({"usuario": u_logado['nome'], "data": hoje_str, "entrada": hora_at, "horas_extras": -8.0}).execute()
-                else:
-                    campo = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}[proxima]
-                    payload = {campo: hora_at}
-                    if proxima == "Saída Final":
-                        total = calcular_horas(datetime.strptime(reg_hoje['entrada'], "%H:%M").time(), 
-                                               datetime.strptime(reg_hoje['saida_almoco'], "%H:%M").time(),
-                                               datetime.strptime(reg_hoje['retorno_almoco'], "%H:%M").time(), 
-                                               agora.time())
-                        payload.update({"horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)})
-                    supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
-                st.rerun()
+    /* Efeito ao passar o mouse */
+    div[data-testid="stSidebar"] .stRadio label:hover {
+        background-color: #e3f2fd;
+        border-color: #007BFF;
+        transform: translateX(5px);
+    }
+
+    /* Item Selecionado */
+    div[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input:checked + label {
+        background-color: #007BFF !important;
+        color: white !important;
+        border-color: #0056b3 !important;
+        font-weight: bold;
+        box-shadow: 0px 4px 10px rgba(0, 123, 255, 0.3);
+    }
+
+    /* Esconde o círculo (radio) */
+    div[data-testid="stSidebar"] [data-testid="stBlock"] div[role="radiogroup"] div[data-testid="stMarkdownContainer"] {
+        display: none;
+    }
+    
+    div[role="radiogroup"] span[data-baseweb="radio"] {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # 2. PÁGINA: MANUTENÇÃO (SÓ ADMIN)
 elif pagina == "Manutenção de Ponto" and eh_admin:
