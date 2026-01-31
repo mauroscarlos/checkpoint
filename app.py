@@ -87,30 +87,59 @@ if not st.session_state.autenticado:
     st.stop()
 
 # --- SE CHEGOU AQUI, ESTÁ LOGADO ---
-u = st.session_state.usuario_logado
-selecionado = u['nome']
-eh_admin = u.get('perfil') == 'admin'
-
-with st.sidebar:
-    st.title("🚀 MSCGYM")
-    st.write(f"Logado como: **{selecionado}**")
+elif pagina == "Manutenção de Ponto" and eh_admin:
+    st.subheader(f"🛠️ Manutenção de Registros")
     
-    opcoes = ["Bater Ponto"]
-    if eh_admin:
-        opcoes += ["Folha de Ponto", "Manutenção de Ponto", "Cadastro de Funcionários", "Relatórios"]
+    # Busca a lista de funcionários novamente para garantir que res_func exista aqui
+    res_func_manut = supabase.table("funcionarios").select("nome").execute()
+    lista_nomes_manut = [f['nome'] for f in res_func_manut.data] if res_func_manut.data else []
     
-    pagina = st.radio("Navegação", opcoes)
+    alvo = st.selectbox("Selecione o Funcionário para Ajuste", lista_nomes_manut)
     
-    if st.button("Sair / Logout"):
-        st.session_state.autenticado = False
-        st.rerun()
+    col_data_edit = st.date_input("Selecione o dia", value=datetime.now(fuso_br).date())
+    
+    # Busca o registro do funcionário selecionado (alvo) no dia escolhido
+    res = supabase.table("registros_ponto").select("*").eq("usuario", alvo).eq("data", str(col_data_edit)).execute()
+    reg_edit = res.data[0] if res.data else None
+    
+    with st.form("form_manutencao_admin"):
+        st.write(f"### Ajustando: {alvo} - Dia: {col_data_edit.strftime('%d/%m/%Y')}")
+        
+        c1, c2 = st.columns(2)
+        e = c1.time_input("Entrada", value=datetime.strptime(reg_edit.get('entrada', "08:00") if reg_edit else "08:00", "%H:%M"))
+        sa = c2.time_input("Saída Almoço", value=datetime.strptime(reg_edit.get('saida_almoco', "12:00") if reg_edit else "12:00", "%H:%M"))
+        
+        c3, c4 = st.columns(2)
+        ra = c3.time_input("Retorno Almoço", value=datetime.strptime(reg_edit.get('retorno_almoco', "13:00") if reg_edit else "13:00", "%H:%M"))
+        sf = c4.time_input("Saída Final", value=datetime.strptime(reg_edit.get('saida', "17:00") if reg_edit else "17:00", "%H:%M"))
+        
+        if st.form_submit_button("🔨 SALVAR ALTERAÇÕES", use_container_width=True):
+            total = calcular_horas(e, sa, ra, sf)
+            payload = {
+                "usuario": alvo,
+                "data": str(col_data_edit),
+                "entrada": str(e)[:5],
+                "saida_almoco": str(sa)[:5],
+                "retorno_almoco": str(ra)[:5],
+                "saida": str(sf)[:5],
+                "horas_trabalhadas": total,
+                "horas_extras": round(total - 8.0, 2)
+            }
+            
+            if reg_edit:
+                supabase.table("registros_ponto").update(payload).eq("id", reg_edit['id']).execute()
+            else:
+                supabase.table("registros_ponto").insert(payload).execute()
+            
+            st.success(f"Registro de {alvo} atualizado!")
+            st.rerun()
 
-    if eh_admin:
-        st.divider()
-        hoje = datetime.now(fuso_br).date()
-        mes = st.selectbox("Mês Referência", list(range(1, 13)), index=hoje.month - 1)
-        ano = st.number_input("Ano", value=hoje.year, step=1)
-
+    if reg_edit:
+        if st.button("❌ EXCLUIR REGISTRO DESTE DIA"):
+            supabase.table("registros_ponto").delete().eq("id", reg_edit['id']).execute()
+            st.warning("Registro removido!")
+            st.rerun()
+            
 # --- PÁGINAS (Mantendo a lógica anterior, mas filtrando pelo logado) ---
 
 if pagina == "Bater Ponto":
