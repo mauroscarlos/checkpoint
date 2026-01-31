@@ -6,17 +6,14 @@ import calendar
 import pytz
 from fpdf import FPDF
 
-# 1. Conexão
+# 1. Conexão Segura
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
-KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
+KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"supabase = create_client(URL, KEY)
 
-supabase = create_client(URL, KEY)
-
-st.set_page_config(page_title="MSCGYM - Gestão Segura", layout="wide")
-
+st.set_page_config(page_title="MSCGYM - Gestão de Ponto", layout="wide")
 fuso_br = pytz.timezone('America/Sao_Paulo')
 
-# --- FUNÇÕES DE APOIO ---
+# --- Funções de Apoio ---
 def calcular_horas(e, s_a, r_a, s):
     try:
         t1 = e.hour + e.minute/60
@@ -31,35 +28,10 @@ def gerar_pdf_folha(funcionario_info, df_mes, mes_ano):
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, "MSCGYM - CONTROLE DE PONTO", ln=True, align="C")
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 5, f"Relatório de Frequência: {mes_ano}", ln=True, align="C")
     pdf.ln(10)
-    pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 8, f" Funcionário: {funcionario_info['nome']}", ln=True, fill=True)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(95, 8, f" Cargo: {funcionario_info.get('cargo', 'N/A')}", border=0)
-    pdf.cell(95, 8, f" Contrato: {funcionario_info.get('tipo_contrato', 'N/A')}", ln=True)
     pdf.ln(5)
-    pdf.set_font("Helvetica", "B", 9)
-    colunas = ["Data", "Entrada", "S.Alm", "R.Alm", "Saída", "Total", "Saldo"]
-    larguras = [25, 25, 25, 25, 25, 30, 30]
-    for i, col in enumerate(colunas):
-        pdf.cell(larguras[i], 8, col, border=1, align="C", fill=True)
-    pdf.ln()
-    pdf.set_font("Helvetica", "", 9)
-    for _, row in df_mes.iterrows():
-        pdf.cell(larguras[0], 7, row['data'].strftime('%d/%m/%Y'), border=1, align="C")
-        pdf.cell(larguras[1], 7, str(row['entrada']), border=1, align="C")
-        pdf.cell(larguras[2], 7, str(row['saida_almoco']), border=1, align="C")
-        pdf.cell(larguras[3], 7, str(row['retorno_almoco']), border=1, align="C")
-        pdf.cell(larguras[4], 7, str(row['saida']), border=1, align="C")
-        pdf.cell(larguras[5], 7, f"{row['horas_trabalhadas']}h", border=1, align="C")
-        pdf.cell(larguras[6], 7, f"{row['horas_extras']:+.2f}h", border=1, align="C")
-        pdf.ln()
-    pdf.ln(5)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 10, f"Total de Horas no Mês: {df_mes['horas_trabalhadas'].sum():.2f}h", ln=True, align="R")
     return pdf.output()
 
 # --- SISTEMA DE LOGIN ---
@@ -68,146 +40,141 @@ if 'autenticado' not in st.session_state:
     st.session_state.usuario_logado = None
 
 if not st.session_state.autenticado:
-    st.title("🔐 MSCGYM - Acesso Restrito")
-    with st.form("login_form"):
-        res_func = supabase.table("funcionarios").select("*").execute()
-        lista_usuarios = [f['nome'] for f in res_func.data] if res_func.data else []
-        
-        user = st.selectbox("Selecione seu nome", lista_usuarios)
-        senha = st.text_input("Senha", type="password")
-        
-        if st.form_submit_button("Entrar"):
-            dados_user = next((f for f in res_func.data if f['nome'] == user), None)
-            if dados_user and dados_user.get('senha') == senha:
-                st.session_state.autenticado = True
-                st.session_state.usuario_logado = dados_user
-                st.rerun()
-            else:
-                st.error("Senha incorreta!")
+    st.title("🔐 MSCGYM - Login")
+    try:
+        res_f = supabase.table("funcionarios").select("*").execute()
+        lista_u = [f['nome'] for f in res_f.data] if res_f.data else []
+        with st.form("login_form"):
+            user = st.selectbox("Selecione seu nome", lista_u)
+            senha = st.text_input("Senha", type="password")
+            if st.form_submit_button("Entrar"):
+                dados_u = next((f for f in res_f.data if f['nome'] == user), None)
+                if dados_u and str(dados_u.get('senha')) == senha:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = dados_u
+                    st.rerun()
+                else: st.error("Senha incorreta!")
+    except: st.error("Erro ao conectar ao banco.")
     st.stop()
 
 # --- SE CHEGOU AQUI, ESTÁ LOGADO ---
-elif pagina == "Manutenção de Ponto" and eh_admin:
-    st.subheader(f"🛠️ Manutenção de Registros")
-    
-    # Busca a lista de funcionários novamente para garantir que res_func exista aqui
-    res_func_manut = supabase.table("funcionarios").select("nome").execute()
-    lista_nomes_manut = [f['nome'] for f in res_func_manut.data] if res_func_manut.data else []
-    
-    alvo = st.selectbox("Selecione o Funcionário para Ajuste", lista_nomes_manut)
-    
-    col_data_edit = st.date_input("Selecione o dia", value=datetime.now(fuso_br).date())
-    
-    # Busca o registro do funcionário selecionado (alvo) no dia escolhido
-    res = supabase.table("registros_ponto").select("*").eq("usuario", alvo).eq("data", str(col_data_edit)).execute()
-    reg_edit = res.data[0] if res.data else None
-    
-    with st.form("form_manutencao_admin"):
-        st.write(f"### Ajustando: {alvo} - Dia: {col_data_edit.strftime('%d/%m/%Y')}")
-        
-        c1, c2 = st.columns(2)
-        e = c1.time_input("Entrada", value=datetime.strptime(reg_edit.get('entrada', "08:00") if reg_edit else "08:00", "%H:%M"))
-        sa = c2.time_input("Saída Almoço", value=datetime.strptime(reg_edit.get('saida_almoco', "12:00") if reg_edit else "12:00", "%H:%M"))
-        
-        c3, c4 = st.columns(2)
-        ra = c3.time_input("Retorno Almoço", value=datetime.strptime(reg_edit.get('retorno_almoco', "13:00") if reg_edit else "13:00", "%H:%M"))
-        sf = c4.time_input("Saída Final", value=datetime.strptime(reg_edit.get('saida', "17:00") if reg_edit else "17:00", "%H:%M"))
-        
-        if st.form_submit_button("🔨 SALVAR ALTERAÇÕES", use_container_width=True):
-            total = calcular_horas(e, sa, ra, sf)
-            payload = {
-                "usuario": alvo,
-                "data": str(col_data_edit),
-                "entrada": str(e)[:5],
-                "saida_almoco": str(sa)[:5],
-                "retorno_almoco": str(ra)[:5],
-                "saida": str(sf)[:5],
-                "horas_trabalhadas": total,
-                "horas_extras": round(total - 8.0, 2)
-            }
-            
-            if reg_edit:
-                supabase.table("registros_ponto").update(payload).eq("id", reg_edit['id']).execute()
-            else:
-                supabase.table("registros_ponto").insert(payload).execute()
-            
-            st.success(f"Registro de {alvo} atualizado!")
-            st.rerun()
+u_logado = st.session_state.usuario_logado
+eh_admin = u_logado.get('perfil') == 'admin'
 
-    if reg_edit:
-        if st.button("❌ EXCLUIR REGISTRO DESTE DIA"):
-            supabase.table("registros_ponto").delete().eq("id", reg_edit['id']).execute()
-            st.warning("Registro removido!")
-            st.rerun()
-            
-# --- PÁGINAS (Mantendo a lógica anterior, mas filtrando pelo logado) ---
+# --- MENU LATERAL ---
+with st.sidebar:
+    st.title("🚀 MSCGYM")
+    st.write(f"Usuário: **{u_logado['nome']}**")
+    
+    opcoes = ["Bater Ponto"]
+    if eh_admin:
+        opcoes += ["Folha de Ponto", "Manutenção de Ponto", "Cadastro de Funcionários", "Relatórios"]
+    
+    pagina = st.radio("Navegação", opcoes)
+    
+    if eh_admin:
+        st.divider()
+        hoje_ref = datetime.now(fuso_br)
+        mes_ref = st.selectbox("Mês de Referência", list(range(1, 13)), index=hoje_ref.month - 1)
+        ano_ref = st.number_input("Ano", value=hoje_ref.year, step=1)
+    
+    if st.button("Sair"):
+        st.session_state.autenticado = False
+        st.rerun()
 
+# --- LÓGICA DAS PÁGINAS ---
+
+# 1. PÁGINA: BATER PONTO
 if pagina == "Bater Ponto":
     _, col_central, _ = st.columns([1, 2, 1])
     with col_central:
-        st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {selecionado}!</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='text-align: center;'>👋 Olá, {u_logado['nome']}!</h2>", unsafe_allow_html=True)
         agora = datetime.now(fuso_br)
         hoje_str = agora.strftime('%Y-%m-%d')
         st.markdown(f"""<div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;">
-            <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d de %B de %Y')}</p>
+            <p style="margin: 0; font-size: 1.2rem; opacity: 0.9;">{agora.strftime('%d/%m/%Y')}</p>
             <h1 style="margin: 0; font-size: 3.5rem;">{agora.strftime('%H:%M')}</h1></div>""", unsafe_allow_html=True)
         
-        res = supabase.table("registros_ponto").select("*").eq("usuario", selecionado).eq("data", hoje_str).execute()
+        res = supabase.table("registros_ponto").select("*").eq("usuario", u_logado['nome']).eq("data", hoje_str).execute()
         reg_hoje = res.data[0] if res.data else None
         
-        # ... (Restante da lógica de bater ponto igual à anterior) ...
         proxima = "Entrada"
-        cor_botao = "#28a745"
+        cor_b = "#28a745"
         if reg_hoje:
-            if not reg_hoje.get('saida_almoco'): proxima, cor_botao = "Saída Almoço", "#ffc107"
-            elif not reg_hoje.get('retorno_almoco'): proxima, cor_botao = "Retorno Almoço", "#17a2b8"
-            elif not reg_hoje.get('saida'): proxima, cor_botao = "Saída Final", "#dc3545"
+            if not reg_hoje.get('saida_almoco'): proxima, cor_b = "Saída Almoço", "#ffc107"
+            elif not reg_hoje.get('retorno_almoco'): proxima, cor_b = "Retorno Almoço", "#17a2b8"
+            elif not reg_hoje.get('saida'): proxima, cor_b = "Saída Final", "#dc3545"
             else: proxima = "Concluído"
 
         if proxima == "Concluído":
-            st.success("✨ Jornada finalizada!")
+            st.success("✅ Jornada finalizada!")
         else:
-            st.markdown(f"<style>div.stButton > button {{ background-color: {cor_botao} !important; color: white !important; height: 80px; font-weight: bold; border-radius: 15px; }}</style>", unsafe_allow_html=True)
+            st.markdown(f"<style>div.stButton > button {{ background-color: {cor_b} !important; color: white !important; height: 80px; font-weight: bold; border-radius: 15px; }}</style>", unsafe_allow_html=True)
             if st.button(f"REGISTRAR {proxima.upper()}", use_container_width=True):
-                hora_atual = agora.strftime('%H:%M')
+                hora_at = agora.strftime('%H:%M')
                 if not reg_hoje:
-                    supabase.table("registros_ponto").insert({"usuario": selecionado, "data": hoje_str, "entrada": hora_atual, "horas_extras": -8.0}).execute()
+                    supabase.table("registros_ponto").insert({"usuario": u_logado['nome'], "data": hoje_str, "entrada": hora_at, "horas_extras": -8.0}).execute()
                 else:
-                    campo_map = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}
-                    payload = {campo_map[proxima]: hora_atual}
+                    campo = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}[proxima]
+                    payload = {campo: hora_at}
                     if proxima == "Saída Final":
-                        e = datetime.strptime(reg_hoje['entrada'], "%H:%M").time()
-                        sa = datetime.strptime(reg_hoje['saida_almoco'], "%H:%M").time()
-                        ra = datetime.strptime(reg_hoje['retorno_almoco'], "%H:%M").time()
-                        total = calcular_horas(e, sa, ra, agora.time())
+                        total = calcular_horas(datetime.strptime(reg_hoje['entrada'], "%H:%M").time(), 
+                                               datetime.strptime(reg_hoje['saida_almoco'], "%H:%M").time(),
+                                               datetime.strptime(reg_hoje['retorno_almoco'], "%H:%M").time(), 
+                                               agora.time())
                         payload.update({"horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)})
                     supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
-                st.balloons(); st.rerun()
+                st.rerun()
 
-# --- PÁGINAS ADMINISTRATIVAS (Somente Admin vê) ---
-elif pagina == "Folha de Ponto" and eh_admin:
-    st.subheader(f"📅 Folha: {selecionado}")
-    # ... (Lógica da Folha de Ponto igual à anterior) ...
-    # Nota: Aqui o admin pode ver a sua própria ou a de outros se adicionarmos um selectbox extra.
-    pass
-
+# 2. PÁGINA: MANUTENÇÃO (SÓ ADMIN)
 elif pagina == "Manutenção de Ponto" and eh_admin:
-    st.subheader(f"🛠️ Manutenção")
-    alvo = st.selectbox("Selecione o Funcionário para Ajuste", [f['nome'] for f in res_func.data])
-    # ... (Lógica da Manutenção igual à anterior, usando 'alvo' no lugar de 'selecionado') ...
-    pass
+    st.subheader("🛠️ Manutenção Administrativa")
+    res_f2 = supabase.table("funcionarios").select("nome").execute()
+    lista_f = [f['nome'] for f in res_f2.data]
+    alvo = st.selectbox("Selecione o Funcionário", lista_f)
+    dia_m = st.date_input("Data do Ajuste", value=datetime.now(fuso_br).date())
+    
+    res_e = supabase.table("registros_ponto").select("*").eq("usuario", alvo).eq("data", str(dia_m)).execute()
+    reg_e = res_e.data[0] if res_e.data else None
+    
+    with st.form("form_m"):
+        st.write(f"Ajustando: {alvo} em {dia_m}")
+        c1, c2 = st.columns(2)
+        h_e = c1.time_input("Entrada", value=datetime.strptime(reg_e.get('entrada', "08:00") if reg_e else "08:00", "%H:%M"))
+        h_sa = c2.time_input("S. Almoço", value=datetime.strptime(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00", "%H:%M"))
+        h_ra = c1.time_input("R. Almoço", value=datetime.strptime(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00", "%H:%M"))
+        h_s = c2.time_input("Saída", value=datetime.strptime(reg_e.get('saida', "17:00") if reg_e else "17:00", "%H:%M"))
+        
+        if st.form_submit_button("Salvar Ajuste"):
+            t = calcular_horas(h_e, h_sa, h_ra, h_s)
+            p = {"usuario": alvo, "data": str(dia_m), "entrada": str(h_e)[:5], "saida_almoco": str(h_sa)[:5], "retorno_almoco": str(h_ra)[:5], "saida": str(h_s)[:5], "horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)}
+            if reg_e: supabase.table("registros_ponto").update(p).eq("id", reg_e['id']).execute()
+            else: supabase.table("registros_ponto").insert(p).execute()
+            st.success("Ajustado!"); st.rerun()
 
-elif pagina == "Cadastro de Funcionários" and eh_admin:
-    st.subheader("👤 Gestão de Usuários")
-    with st.form("cad_func"):
-        n = st.text_input("Nome")
-        s = st.text_input("Senha de Acesso", value="1234")
-        p = st.selectbox("Perfil", ["funcionario", "admin"])
-        # ... outros campos (salário, etc) ...
-        if st.form_submit_button("Cadastrar"):
-            supabase.table("funcionarios").insert({"nome": n, "senha": s, "perfil": p}).execute()
-            st.success("Salvo!"); st.rerun()
-
+# 3. PÁGINA: RELATÓRIOS (SÓ ADMIN)
 elif pagina == "Relatórios" and eh_admin:
-    # ... Lógica de Relatórios ...
-    pass
+    st.subheader("📊 Relatórios Financeiros")
+    res_f3 = supabase.table("funcionarios").select("*").execute()
+    alvo_r = st.selectbox("Selecione o Funcionário", [f['nome'] for f in res_f3.data])
+    info_r = next(f for f in res_f3.data if f['nome'] == alvo_r)
+    
+    res_p = supabase.table("registros_ponto").select("*").eq("usuario", alvo_r).execute()
+    if res_p.data:
+        df = pd.DataFrame(res_p.data)
+        df['data'] = pd.to_datetime(df['data'])
+        df_mes = df[(df['data'].dt.month == mes_ref) & (df['data'].dt.year == int(ano_ref))].sort_values("data")
+        st.metric("Total Horas no Mês", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
+        st.dataframe(df_mes[['data', 'entrada', 'saida', 'horas_trabalhadas']], use_container_width=True)
+
+# 4. PÁGINA: CADASTRO (SÓ ADMIN)
+elif pagina == "Cadastro de Funcionários" and eh_admin:
+    st.subheader("👤 Novo Usuário")
+    with st.form("cad"):
+        n = st.text_input("Nome")
+        s = st.text_input("Senha", value="1234")
+        p = st.selectbox("Perfil", ["funcionario", "admin"])
+        v = st.number_input("Valor Hora (PJ)", value=0.0)
+        if st.form_submit_button("Cadastrar"):
+            supabase.table("funcionarios").insert({"nome": n, "senha": s, "perfil": p, "valor_hora": v}).execute()
+            st.success("Cadastrado!"); st.rerun()
