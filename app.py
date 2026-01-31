@@ -6,7 +6,7 @@ import calendar
 import pytz
 from fpdf import FPDF
 
-# 1. Conexão Segura
+# 1. Conexão Segura (Corrigida com quebra de linha)
 URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
 KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
 
@@ -15,37 +15,52 @@ supabase = create_client(URL, KEY)
 st.set_page_config(page_title="MSCGYM - Gestão de Ponto", layout="wide")
 fuso_br = pytz.timezone('America/Sao_Paulo')
 
-# --- CSS PARA INTERFACE PROFISSIONAL E MENU ESTILIZADO ---
+# --- CSS PARA INTERFACE PROFISSIONAL E MENU SEM BOLINHAS ---
 st.markdown("""
 <style>
+    /* Estilização Geral */
     [data-testid="column"] { padding: 0px 5px !important; }
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e0e0e0; }
     
-    /* MENU LATERAL SEM BOLINHAS */
-    div[role="radiogroup"] span[data-baseweb="radio"] { display: none !important; }
+    /* REMOVENDO AS BOLINHAS DO MENU LATERAL */
+    div[role="radiogroup"] span[data-baseweb="radio"] {
+        display: none !important;
+    }
     
+    /* TRANSFORMANDO O TEXTO EM BOTÕES LARGOS */
     div[role="radiogroup"] label {
         background-color: #f1f3f5 !important;
-        border-radius: 8px !important;
-        padding: 10px 15px !important;
-        margin-bottom: 8px !important;
+        border-radius: 10px !important;
+        padding: 12px 20px !important;
+        margin-bottom: 10px !important;
         border: 1px solid #d1d3d4 !important;
         transition: all 0.3s ease !important;
-        display: block !important;
+        display: flex !important;
+        align-items: center !important;
         width: 100% !important;
+        cursor: pointer !important;
     }
 
+    /* EFEITO AO PASSAR O MOUSE */
     div[role="radiogroup"] label:hover {
         background-color: #e9ecef !important;
         border-color: #007BFF !important;
         transform: translateX(5px);
     }
 
+    /* ITEM SELECIONADO (AZUL MSCGYM) */
     div[role="radiogroup"] input:checked + label {
         background-color: #007BFF !important;
         color: white !important;
         border-color: #0056b3 !important;
         font-weight: bold !important;
+        box-shadow: 0px 4px 10px rgba(0, 123, 255, 0.3);
+    }
+    
+    /* AJUSTE PARA O TEXTO NÃO FICAR GRUDADO NA BORDA */
+    div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        margin-bottom: 0px !important;
+        font-size: 1rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -90,22 +105,27 @@ eh_admin = u_logado.get('perfil') == 'admin'
 with st.sidebar:
     st.title("🚀 MSCGYM")
     st.write(f"Usuário: **{u_logado['nome']}**")
+    
     opcoes = ["🏠 Bater Ponto"]
     if eh_admin:
         opcoes += ["📅 Folha de Ponto", "🛠️ Manutenção de Ponto", "👤 Cadastro de Funcionários", "📊 Relatórios"]
+    
     pagina = st.radio("Navegação", opcoes)
+    
     if eh_admin:
         st.divider()
-        hj = datetime.now(fuso_br)
-        mes_ref = st.selectbox("Mês", list(range(1, 13)), index=hj.month - 1)
-        ano_ref = st.number_input("Ano", value=hj.year)
+        hj_ref = datetime.now(fuso_br)
+        mes_ref = st.selectbox("Mês de Referência", list(range(1, 13)), index=hj_ref.month - 1)
+        ano_ref = st.number_input("Ano", value=hj_ref.year, step=1)
+    
     if st.button("Sair"):
         st.session_state.autenticado = False
         st.rerun()
 
 # --- LÓGICA DAS PÁGINAS ---
 
-if "🏠 Bater Ponto" in pagina:
+# 1. PÁGINA: BATER PONTO
+if pagina == "🏠 Bater Ponto":
     st.subheader("⌚ Registro de Ponto")
     agora = datetime.now(fuso_br)
     hoje_str = agora.strftime('%Y-%m-%d')
@@ -139,6 +159,7 @@ if "🏠 Bater Ponto" in pagina:
             st.rerun()
     else: st.success("Jornada de hoje concluída!")
 
+# 2. PÁGINA: FOLHA DE PONTO
 elif "📅 Folha de Ponto" in pagina and eh_admin:
     st.subheader("📅 Gestão de Folha")
     res_f = supabase.table("funcionarios").select("nome").execute()
@@ -162,8 +183,9 @@ elif "📅 Folha de Ponto" in pagina and eh_admin:
                 else: supabase.table("registros_ponto").insert(p).execute()
                 st.rerun()
 
+# 3. PÁGINA: MANUTENÇÃO
 elif "🛠️ Manutenção de Ponto" in pagina and eh_admin:
-    st.subheader("🛠️ Manutenção Horizontal")
+    st.subheader("🛠️ Manutenção")
     res_f2 = supabase.table("funcionarios").select("nome").execute()
     alvo_m = st.selectbox("Funcionário", [f['nome'] for f in res_f2.data], key="m_alvo")
     dia_m = st.date_input("Data", value=datetime.now(fuso_br).date())
@@ -175,35 +197,34 @@ elif "🛠️ Manutenção de Ponto" in pagina and eh_admin:
         hsa = c[1].time_input("S. Almoço", value=datetime.strptime(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00", "%H:%M"))
         hra = c[2].time_input("R. Almoço", value=datetime.strptime(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00", "%H:%M"))
         hs = c[3].time_input("Saída", value=datetime.strptime(reg_e.get('saida', "17:00") if reg_e else "17:00", "%H:%M"))
-        if st.form_submit_button("SALVAR AJUSTE MINUCIOSO", use_container_width=True):
+        if st.form_submit_button("SALVAR AJUSTE", use_container_width=True):
             t = calcular_horas(he, hsa, hra, hs)
             payload = {"usuario": alvo_m, "data": str(dia_m), "entrada": he.strftime("%H:%M"), "saida_almoco": hsa.strftime("%H:%M"), "retorno_almoco": hra.strftime("%H:%M"), "saida": hs.strftime("%H:%M"), "horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)}
             if reg_e: supabase.table("registros_ponto").update(payload).eq("id", reg_e['id']).execute()
             else: supabase.table("registros_ponto").insert(payload).execute()
-            st.success("Ajustado!"); st.rerun()
-    if reg_e and st.button("❌ EXCLUIR REGISTRO"):
-        supabase.table("registros_ponto").delete().eq("id", reg_e['id']).execute()
-        st.rerun()
+            st.success("Salvo!"); st.rerun()
 
+# 4. PÁGINA: RELATÓRIOS
 elif "📊 Relatórios" in pagina and eh_admin:
     st.subheader("📊 Relatórios")
     res_f3 = supabase.table("funcionarios").select("*").execute()
-    alvo_r = st.selectbox("Funcionário", [f['nome'] for f in res_f3.data])
+    alvo_r = st.selectbox("Selecione o Funcionário", [f['nome'] for f in res_f3.data])
     res_p = supabase.table("registros_ponto").select("*").eq("usuario", alvo_r).execute()
     if res_p.data:
         df = pd.DataFrame(res_p.data)
         df['data'] = pd.to_datetime(df['data'])
         df_mes = df[(df['data'].dt.month == mes_ref) & (df['data'].dt.year == int(ano_ref))].sort_values("data")
-        st.metric("Total Horas", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
+        st.metric("Total Horas no Mês", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
         st.dataframe(df_mes[['data', 'entrada', 'saida', 'horas_trabalhadas']], use_container_width=True)
 
+# 5. PÁGINA: CADASTRO
 elif "👤 Cadastro de Funcionários" in pagina and eh_admin:
     st.subheader("👤 Novo Usuário")
     with st.form("cad"):
         n = st.text_input("Nome")
         s = st.text_input("Senha", value="1234")
         p = st.selectbox("Perfil", ["funcionario", "admin"])
-        v = st.number_input("Valor Hora", value=0.0)
+        v = st.number_input("Valor Hora (PJ)", value=0.0)
         if st.form_submit_button("Cadastrar"):
             supabase.table("funcionarios").insert({"nome": n, "senha": s, "perfil": p, "valor_hora": v}).execute()
             st.success("Cadastrado!"); st.rerun()
