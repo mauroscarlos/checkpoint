@@ -132,17 +132,17 @@ if pagina == "Bater Ponto":
 elif pagina == "Manutenção de Ponto" and eh_admin:
     st.subheader("🛠️ Manutenção Administrativa")
     
-    # Busca a lista de funcionários atualizada
-    res_f2 = supabase.table("funcionarios").select("nome").execute()
-    lista_f = [f['nome'] for f in res_f2.data] if res_f2.data else []
+    # BUSCA A LISTA DE FUNCIONÁRIOS NA HORA (Evita o erro NameError)
+    res_f_manut = supabase.table("funcionarios").select("nome").execute()
+    lista_nomes_manut = [f['nome'] for f in res_f_manut.data] if res_f_manut.data else []
     
     col_func, col_data = st.columns(2)
     with col_func:
-        alvo = st.selectbox("Selecione o Funcionário", lista_u) # Usando lista do login ou f2
+        alvo = st.selectbox("Selecione o Funcionário", lista_nomes_manut)
     with col_data:
         dia_m = st.date_input("Data do Ajuste", value=datetime.now(fuso_br).date())
     
-    # Busca o registro existente
+    # Busca o registro existente para o funcionário e dia selecionados
     res_e = supabase.table("registros_ponto").select("*").eq("usuario", alvo).eq("data", str(dia_m)).execute()
     reg_e = res_e.data[0] if res_e.data else None
     
@@ -150,57 +150,55 @@ elif pagina == "Manutenção de Ponto" and eh_admin:
     
     with st.form("form_manutencao_horizontal"):
         st.write(f"### 📋 Ajuste de Horários: {alvo}")
-        st.caption(f"Data selecionada: {dia_m.strftime('%d/%m/%Y')}")
+        st.caption(f"Data: {dia_m.strftime('%d/%m/%Y')}")
         
-        # Linha Horizontal de Horários
+        # LINHA HORIZONTAL COM AJUSTE DE MINUTOS
         c1, c2, c3, c4 = st.columns(4)
         
         with c1:
             h_e = st.time_input("📥 Entrada", 
-                               value=datetime.strptime(reg_e.get('entrada', "08:00") if reg_e else "08:00", "%H:%M"),
-                               help="Ajuste hora e minutos da entrada")
+                               value=datetime.strptime(reg_e.get('entrada', "08:00") if reg_e else "08:00", "%H:%M").time())
         with c2:
             h_sa = st.time_input("☕ Saída Almoço", 
-                                value=datetime.strptime(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00", "%H:%M"))
+                                value=datetime.strptime(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00", "%H:%M").time())
         with c3:
             h_ra = st.time_input("🔙 Retorno Almoço", 
-                                value=datetime.strptime(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00", "%H:%M"))
+                                value=datetime.strptime(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00", "%H:%M").time())
         with c4:
             h_s = st.time_input("🚪 Saída Final", 
-                               value=datetime.strptime(reg_e.get('saida', "17:00") if reg_e else "17:00", "%H:%M"))
+                               value=datetime.strptime(reg_e.get('saida', "17:00") if reg_e else "17:00", "%H:%M").time())
         
-        st.write("") # Espaçador
+        st.write("") 
         
-        # Botão de Salvar centralizado
         if st.form_submit_button("💾 SALVAR MANUTENÇÃO", use_container_width=True):
             # Cálculo de horas considerando os minutos exatos
-            t = calcular_horas(h_e, h_sa, h_ra, h_s)
+            t_trab = calcular_horas(h_e, h_sa, h_ra, h_s)
             
-            p = {
+            p_update = {
                 "usuario": alvo, 
                 "data": str(dia_m), 
                 "entrada": h_e.strftime("%H:%M"), 
                 "saida_almoco": h_sa.strftime("%H:%M"), 
                 "retorno_almoco": h_ra.strftime("%H:%M"), 
                 "saida": h_s.strftime("%H:%M"), 
-                "horas_trabalhadas": t, 
-                "horas_extras": round(t - 8.0, 2)
+                "horas_trabalhadas": t_trab, 
+                "horas_extras": round(t_trab - 8.0, 2)
             }
             
             if reg_e:
-                supabase.table("registros_ponto").update(p).eq("id", reg_e['id']).execute()
+                supabase.table("registros_ponto").update(p_update).eq("id", reg_e['id']).execute()
             else:
-                supabase.table("registros_ponto").insert(p).execute()
+                supabase.table("registros_ponto").insert(p_update).execute()
                 
-            st.success(f"✅ Ponto de {alvo} ajustado com sucesso para {t}h trabalhadas!")
+            st.success(f"✅ Ajustado para {t_trab}h!")
             st.rerun()
 
-    # Zona de exclusão
+    # Opção de excluir
     if reg_e:
-        with st.expander("🗑️ Opções Avançadas"):
-            if st.button("EXCLUIR REGISTRO DESTE DIA", type="secondary"):
+        with st.expander("🗑️ Excluir Registro"):
+            if st.button("CONFIRMAR EXCLUSÃO"):
                 supabase.table("registros_ponto").delete().eq("id", reg_e['id']).execute()
-                st.warning("Registro excluído.")
+                st.warning("Registro removido!")
                 st.rerun()
 
 # 3. PÁGINA: RELATÓRIOS (SÓ ADMIN)
