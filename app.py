@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, time
 import calendar
 import pytz
 from fpdf import FPDF
@@ -63,10 +63,15 @@ def calcular_horas(e, s_a, r_a, s):
         return round((t2 - t1) + (t4 - t3), 2)
     except: return 0.0
 
-def limpar_hora(valor):
-    """Garante que o valor do banco (HH:MM:SS) seja lido apenas como HH:MM"""
-    if not valor: return "00:00"
-    return str(valor)[:5]
+def converter_hora_segura(valor_banco, default="08:00"):
+    """Converte o valor do banco (que pode vir com segundos) para objeto time do Python"""
+    if not valor_banco:
+        return datetime.strptime(default, "%H:%M").time()
+    try:
+        # Tenta formato com segundos (HH:MM:SS) ou sem (HH:MM)
+        return datetime.strptime(str(valor_banco)[:5], "%H:%M").time()
+    except:
+        return datetime.strptime(default, "%H:%M").time()
 
 # --- SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
@@ -138,9 +143,9 @@ if pagina == "🏠 Bater Ponto":
                 campo = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}[proxima]
                 payload = {campo: hora_atual}
                 if proxima == "Saída Final":
-                    t = calcular_horas(datetime.strptime(limpar_hora(reg_hoje['entrada']), "%H:%M").time(), 
-                                       datetime.strptime(limpar_hora(reg_hoje['saida_almoco']), "%H:%M").time(),
-                                       datetime.strptime(limpar_hora(reg_hoje['retorno_almoco']), "%H:%M").time(), agora.time())
+                    t = calcular_horas(converter_hora_segura(reg_hoje['entrada']), 
+                                       converter_hora_segura(reg_hoje['saida_almoco'], "12:00"),
+                                       converter_hora_segura(reg_hoje['retorno_almoco'], "13:00"), agora.time())
                     payload.update({"horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)})
                 supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
             st.rerun()
@@ -158,11 +163,11 @@ elif "📅 Folha de Ponto" in pagina and eh_admin:
         reg = dados.get(dia, {})
         with st.expander(f"Dia {d:02d} - {dia.strftime('%a')}"):
             c = st.columns(4)
-            ent = c[0].time_input("E", value=datetime.strptime(limpar_hora(reg.get('entrada', "08:00")), "%H:%M"), key=f"e{d}")
-            sa = c[1].time_input("SA", value=datetime.strptime(limpar_hora(reg.get('saida_almoco', "12:00")), "%H:%M"), key=f"sa{d}")
-            ra = c[2].time_input("RA", value=datetime.strptime(limpar_hora(reg.get('retorno_almoco', "13:00")), "%H:%M"), key=f"ra{d}")
-            sf = c[3].time_input("S", value=datetime.strptime(limpar_hora(reg.get('saida', "17:00")), "%H:%M"), key=f"sf{d}")
-            if st.button("Salvar", key=f"b{d}"):
+            ent = c[0].time_input("E", value=converter_hora_segura(reg.get('entrada')), key=f"e{d}", step=60)
+            sa = c[1].time_input("SA", value=converter_hora_segura(reg.get('saida_almoco'), "12:00"), key=f"sa{d}", step=60)
+            ra = c[2].time_input("RA", value=converter_hora_segura(reg.get('retorno_almoco'), "13:00"), key=f"ra{d}", step=60)
+            sf = c[3].time_input("S", value=converter_hora_segura(reg.get('saida'), "17:00"), key=f"sf{d}", step=60)
+            if st.button("Salvar Registro", key=f"b{d}"):
                 t = calcular_horas(ent, sa, ra, sf)
                 p = {"usuario": alvo, "data": str(dia), "entrada": ent.strftime("%H:%M"), "saida_almoco": sa.strftime("%H:%M"), "retorno_almoco": ra.strftime("%H:%M"), "saida": sf.strftime("%H:%M"), "horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)}
                 if reg: supabase.table("registros_ponto").update(p).eq("id", reg['id']).execute()
@@ -178,10 +183,10 @@ elif "🛠️ Manutenção de Ponto" in pagina and eh_admin:
     reg_e = res_e.data[0] if res_e.data else None
     with st.form("m_form"):
         c = st.columns(4)
-        he = c[0].time_input("Entrada", value=datetime.strptime(limpar_hora(reg_e.get('entrada', "08:00") if reg_e else "08:00"), "%H:%M"))
-        hsa = c[1].time_input("S. Almoço", value=datetime.strptime(limpar_hora(reg_e.get('saida_almoco', "12:00") if reg_e else "12:00"), "%H:%M"))
-        hra = c[2].time_input("R. Almoço", value=datetime.strptime(limpar_hora(reg_e.get('retorno_almoco', "13:00") if reg_e else "13:00"), "%H:%M"))
-        hs = c[3].time_input("Saída", value=datetime.strptime(limpar_hora(reg_e.get('saida', "17:00") if reg_e else "17:00"), "%H:%M"))
+        he = c[0].time_input("Entrada", value=converter_hora_segura(reg_e.get('entrada') if reg_e else None), step=60)
+        hsa = c[1].time_input("S. Almoço", value=converter_hora_segura(reg_e.get('saida_almoco') if reg_e else None, "12:00"), step=60)
+        hra = c[2].time_input("R. Almoço", value=converter_hora_segura(reg_e.get('retorno_almoco') if reg_e else None, "13:00"), step=60)
+        hs = c[3].time_input("Saída", value=converter_hora_segura(reg_e.get('saida') if reg_e else None, "17:00"), step=60)
         if st.form_submit_button("SALVAR AJUSTE", use_container_width=True):
             t = calcular_horas(he, hsa, hra, hs)
             payload = {"usuario": alvo_m, "data": str(dia_m), "entrada": he.strftime("%H:%M"), "saida_almoco": hsa.strftime("%H:%M"), "retorno_almoco": hra.strftime("%H:%M"), "saida": hs.strftime("%H:%M"), "horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)}
