@@ -387,7 +387,8 @@ with tab_reg:
             f_saida = st.time_input("Saída", value=time(17, 0), step=60)
         with c2:
             st.markdown("**🍽️ Intervalo de Almoço**")
-            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            # Espaço para alinhar com o campo "Data" da esquerda
+            st.markdown("<div style='height:53px'></div>", unsafe_allow_html=True)
             f_saida_almoco = st.time_input("Saída almoço", value=time(12, 0), step=60)
             f_retorno = st.time_input("Retorno almoço", value=time(13, 0), step=60)
             f_obs = st.text_input("Observação (opcional)", placeholder="Ex: Home office, reunião...")
