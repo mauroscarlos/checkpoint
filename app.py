@@ -2,6 +2,13 @@
 PontoFlow — Controle de Ponto com Streamlit + Supabase
 Arquivo principal: app.py
 """
+import sys
+import os
+
+# Garante que a pasta do app.py esteja no path,
+# necessário quando rodando em subpasta no Streamlit Cloud
+sys.path.insert(0, os.path.dirname(__file__))
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
