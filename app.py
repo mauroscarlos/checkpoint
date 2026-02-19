@@ -552,25 +552,38 @@ with tab_manut:
 with tab_hist:
     st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">📋 Histórico de Registros</div>', unsafe_allow_html=True)
 
-    # Filtro
+    # Busca dados frescos (não usa o cache do topo)
+    todos_hist = db.listar_pontos()
+
+    # Filtro de mês com label legível
     col_f1, col_f2 = st.columns([2, 2])
     with col_f1:
         meses_disp = sorted(set(
-            pd.to_datetime(todos["data"]).dt.to_period("M").astype(str).tolist()
-        ), reverse=True) if not todos.empty else []
+            pd.to_datetime(todos_hist["data"]).dt.to_period("M").astype(str).tolist()
+        ), reverse=True) if not todos_hist.empty else []
+
+        def fmt_mes_label(m):
+            y, mo = m.split("-")
+            return pd.Timestamp(year=int(y), month=int(mo), day=1).strftime("%B/%Y").capitalize()
+
+        meses_labels = {m: fmt_mes_label(m) for m in meses_disp}
         mes_atual = datetime.now(TZ_BR).strftime("%Y-%m")
         idx_default = meses_disp.index(mes_atual) if mes_atual in meses_disp else 0
-        filtro_mes = st.selectbox(
-            "Filtrar por mês", options=["Todos"] + meses_disp, index=idx_default + 1 if meses_disp else 0
+        filtro_mes_label = st.selectbox(
+            "Filtrar por mês",
+            options=["Todos"] + [meses_labels[m] for m in meses_disp],
+            index=idx_default + 1 if meses_disp else 0
         )
+        # Converte label de volta para YYYY-MM
+        label_to_key = {v: k for k, v in meses_labels.items()}
+        filtro_mes = label_to_key.get(filtro_mes_label)  # None se "Todos"
 
-    df_hist = db.listar_pontos(filtro_mes if filtro_mes != "Todos" else None)
+    df_hist = db.listar_pontos(filtro_mes)
     df_hist_enr = calc.enriquecer_df(df_hist, CARGA_MIN) if not df_hist.empty else df_hist
 
     if df_hist_enr.empty:
         st.info("Nenhum registro encontrado para este período.")
     else:
-        # Formatar para exibição
         def fmt_date(d):
             return pd.to_datetime(d).strftime("%d/%m/%Y")
 
