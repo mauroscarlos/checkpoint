@@ -6,6 +6,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
+
+TZ_BR = ZoneInfo("America/Sao_Paulo")
 import io
 
 import db
@@ -307,10 +310,11 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    agora_br = datetime.now(TZ_BR)
     st.markdown(f"""
     <div style="margin-top:16px; padding:16px; background:#1e2029; border-radius:10px; border:1px solid #2a2d3a; text-align:center">
-        <div style="font-family:'DM Mono',monospace; font-size:30px; color:#c8f564; letter-spacing:3px">{datetime.now().strftime('%H:%M')}</div>
-        <div style="font-size:11px; color:#7a7f96; margin-top:4px">{date.today().strftime('%d/%m/%Y')}</div>
+        <div style="font-family:'DM Mono',monospace; font-size:30px; color:#c8f564; letter-spacing:3px">{agora_br.strftime('%H:%M')}</div>
+        <div style="font-size:11px; color:#7a7f96; margin-top:4px">{agora_br.strftime('%d/%m/%Y')}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -340,7 +344,7 @@ with tab_reg:
     todos_enr = calc.enriquecer_df(todos, CARGA_MIN) if not todos.empty else todos
 
     col1, col2, col3, col4 = st.columns(4)
-    hoje = date.today()
+    hoje = datetime.now(TZ_BR).date()
 
     # Hoje
     reg_hoje = db.buscar_ponto(hoje)
@@ -551,7 +555,7 @@ with tab_hist:
         meses_disp = sorted(set(
             pd.to_datetime(todos["data"]).dt.to_period("M").astype(str).tolist()
         ), reverse=True) if not todos.empty else []
-        mes_atual = date.today().strftime("%Y-%m")
+        mes_atual = datetime.now(TZ_BR).strftime("%Y-%m")
         idx_default = meses_disp.index(mes_atual) if mes_atual in meses_disp else 0
         filtro_mes = st.selectbox(
             "Filtrar por mês", options=["Todos"] + meses_disp, index=idx_default + 1 if meses_disp else 0
