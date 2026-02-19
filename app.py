@@ -2,13 +2,6 @@
 PontoFlow — Controle de Ponto com Streamlit + Supabase
 Arquivo principal: app.py
 """
-import sys
-import os
-
-# Garante que a pasta do app.py esteja no path,
-# necessário quando rodando em subpasta no Streamlit Cloud
-sys.path.insert(0, os.path.dirname(__file__))
-
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -27,48 +20,261 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# CSS customizado para manter a identidade visual
+# CSS customizado — dark theme idêntico ao HTML original
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap');
 
-html, body, [class*="css"] { font-family: 'Figtree', sans-serif; }
-code, .mono { font-family: 'DM Mono', monospace !important; }
-
-/* Métrica cards */
-[data-testid="metric-container"] {
-    background: #16181f;
-    border: 1px solid #2a2d3a;
-    border-radius: 14px;
-    padding: 16px 20px;
-    border-top: 3px solid #c8f564;
+/* ── Base ── */
+html, body, [class*="css"], .stApp {
+    font-family: 'Figtree', sans-serif !important;
+    background-color: #0e0f13 !important;
+    color: #e8eaf0 !important;
 }
 
-/* Sidebar */
-section[data-testid="stSidebar"] { background: #16181f; }
+/* ── App background ── */
+.stApp { background: #0e0f13 !important; }
+.main .block-container {
+    background: #0e0f13 !important;
+    padding-top: 2rem;
+    max-width: 1200px;
+}
 
-/* Botão primário */
-.stButton > button[kind="primary"] {
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background: #16181f !important;
+    border-right: 1px solid #2a2d3a !important;
+}
+section[data-testid="stSidebar"] * { color: #e8eaf0 !important; }
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stNumberInput label {
+    color: #7a7f96 !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-family: 'DM Mono', monospace !important;
+}
+section[data-testid="stSidebar"] [data-baseweb="select"] > div,
+section[data-testid="stSidebar"] input {
+    background: #1e2029 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 8px !important;
+    color: #e8eaf0 !important;
+}
+/* Logo na sidebar */
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2 {
+    font-family: 'DM Serif Display', serif !important;
+    color: #c8f564 !important;
+    font-size: 26px !important;
+}
+
+/* ── Métricas / stat cards ── */
+[data-testid="metric-container"] {
+    background: #16181f !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 14px !important;
+    padding: 20px !important;
+    border-top: 3px solid #c8f564 !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3) !important;
+}
+[data-testid="metric-container"] label {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.5px !important;
+    color: #7a7f96 !important;
+    font-family: 'DM Mono', monospace !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-family: 'DM Mono', monospace !important;
+    font-size: 28px !important;
+    color: #e8eaf0 !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricDelta"] {
+    font-size: 12px !important;
+    color: #7a7f96 !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #16181f !important;
+    border-radius: 12px !important;
+    padding: 4px !important;
+    border: 1px solid #2a2d3a !important;
+    gap: 2px !important;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    color: #7a7f96 !important;
+    border-radius: 9px !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    padding: 10px 18px !important;
+    border: none !important;
+    font-family: 'Figtree', sans-serif !important;
+}
+.stTabs [aria-selected="true"] {
+    background: rgba(200,245,100,0.12) !important;
+    color: #c8f564 !important;
+}
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+.stTabs [data-baseweb="tab-border"] { display: none !important; }
+
+/* ── Botões ── */
+.stButton > button, .stFormSubmitButton > button {
+    background: #1e2029 !important;
+    color: #e8eaf0 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 10px !important;
+    font-family: 'Figtree', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    transition: all 0.2s !important;
+}
+.stButton > button:hover, .stFormSubmitButton > button:hover {
+    background: #2a2d3a !important;
+    border-color: #c8f564 !important;
+    color: #c8f564 !important;
+}
+/* Botão primário (salvar) */
+.stFormSubmitButton > button[kind="primaryFormSubmit"],
+button[kind="primary"] {
     background: #c8f564 !important;
     color: #0e0f13 !important;
-    font-weight: 700;
-    border-radius: 10px;
-    border: none;
+    border: none !important;
+    box-shadow: 0 4px 16px rgba(200,245,100,0.2) !important;
 }
-.stButton > button[kind="primary"]:hover {
+.stFormSubmitButton > button[kind="primaryFormSubmit"]:hover,
+button[kind="primary"]:hover {
     background: #d8ff6e !important;
-    box-shadow: 0 4px 16px rgba(200,245,100,0.3);
+    color: #0e0f13 !important;
+    box-shadow: 0 6px 20px rgba(200,245,100,0.35) !important;
+    transform: translateY(-1px) !important;
 }
 
-/* Dataframe */
-[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+/* ── Inputs, selects, date, time ── */
+input, textarea,
+[data-baseweb="input"] input,
+[data-baseweb="time-picker"] input,
+[data-baseweb="select"] input {
+    background: #1e2029 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 9px !important;
+    color: #e8eaf0 !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 14px !important;
+}
+[data-baseweb="input"], [data-baseweb="base-input"] {
+    background: #1e2029 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 9px !important;
+}
+[data-baseweb="select"] > div:first-child {
+    background: #1e2029 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 9px !important;
+    color: #e8eaf0 !important;
+}
+/* Dropdown popup */
+[data-baseweb="popover"] ul,
+[data-baseweb="menu"] {
+    background: #1e2029 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 10px !important;
+}
+[data-baseweb="menu"] li:hover { background: #2a2d3a !important; }
 
-/* Tabs */
-.stTabs [data-baseweb="tab"] { font-weight: 600; }
+/* Labels */
+.stTextInput label, .stDateInput label, .stTimeInput label,
+.stNumberInput label, .stSelectbox label, .stTextArea label {
+    color: #7a7f96 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    font-family: 'Figtree', sans-serif !important;
+}
 
-div[data-testid="stSuccess"] { border-left: 4px solid #c8f564; }
-div[data-testid="stError"]   { border-left: 4px solid #ff6b6b; }
-div[data-testid="stWarning"] { border-left: 4px solid #f5a623; }
+/* ── Formulário (card branco → dark) ── */
+[data-testid="stForm"] {
+    background: #16181f !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+}
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 1px solid #2a2d3a !important;
+}
+.dvn-scroller { background: #16181f !important; }
+
+/* ── Alerts / mensagens ── */
+div[data-testid="stSuccess"] {
+    background: rgba(200,245,100,0.08) !important;
+    border: 1px solid rgba(200,245,100,0.3) !important;
+    border-left: 4px solid #c8f564 !important;
+    border-radius: 10px !important;
+    color: #c8f564 !important;
+}
+div[data-testid="stError"] {
+    background: rgba(255,107,107,0.08) !important;
+    border-left: 4px solid #ff6b6b !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stWarning"] {
+    background: rgba(245,166,35,0.08) !important;
+    border-left: 4px solid #f5a623 !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stInfo"] {
+    background: rgba(106,240,200,0.08) !important;
+    border-left: 4px solid #6af0c8 !important;
+    border-radius: 10px !important;
+    color: #6af0c8 !important;
+}
+
+/* ── Dividers ── */
+hr { border-color: #2a2d3a !important; }
+
+/* ── Subheaders ── */
+h1, h2, h3 { color: #e8eaf0 !important; }
+.stSubheader, [data-testid="stSubheader"] {
+    font-family: 'DM Serif Display', serif !important;
+    font-size: 22px !important;
+    color: #e8eaf0 !important;
+}
+
+/* ── Caption / small text ── */
+.stCaption, [data-testid="stCaptionContainer"] {
+    color: #7a7f96 !important;
+    font-size: 12px !important;
+}
+
+/* ── Download button ── */
+.stDownloadButton > button {
+    background: #1e2029 !important;
+    color: #6af0c8 !important;
+    border: 1px solid rgba(106,240,200,0.3) !important;
+    border-radius: 10px !important;
+}
+.stDownloadButton > button:hover {
+    background: rgba(106,240,200,0.1) !important;
+}
+
+/* ── Expander ── */
+[data-testid="stExpander"] {
+    background: #16181f !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 12px !important;
+}
+[data-testid="stExpander"] summary { color: #f5a623 !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0e0f13; }
+::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d4a; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,9 +282,12 @@ div[data-testid="stWarning"] { border-left: 4px solid #f5a623; }
 # ── Sidebar — configurações ────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## ⏱ PontoFlow")
-    st.caption("Controle de Jornada")
-    st.divider()
+    st.markdown("""
+    <div style="padding-bottom:24px; border-bottom:1px solid #2a2d3a; margin-bottom:24px">
+        <div style="font-family:'DM Serif Display',serif; font-size:28px; color:#c8f564; letter-spacing:-0.5px">PontoFlow</div>
+        <div style="font-family:'DM Mono',monospace; font-size:10px; color:#7a7f96; letter-spacing:2px; text-transform:uppercase; margin-top:2px">Controle de Jornada</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     carga_h = st.number_input(
         "Carga horária diária (h)", min_value=1, max_value=24,
@@ -90,15 +299,20 @@ with st.sidebar:
         index=0,
     )
 
-    st.divider()
-    st.caption(f"Meta diária: **{carga_h}h00**")
-    st.caption(f"Meta semanal: **{carga_h * dias_semana}h00**")
-    st.divider()
+    st.markdown(f"""
+    <div style="margin:16px 0; padding:14px; background:#1e2029; border-radius:10px; border:1px solid #2a2d3a">
+        <div style="font-size:10px; color:#7a7f96; font-family:'DM Mono',monospace; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:6px">Metas</div>
+        <div style="font-family:'DM Mono',monospace; color:#e8eaf0; font-size:13px">Diária: <span style="color:#c8f564">{carga_h}h00</span></div>
+        <div style="font-family:'DM Mono',monospace; color:#e8eaf0; font-size:13px; margin-top:4px">Semanal: <span style="color:#c8f564">{carga_h * dias_semana}h00</span></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Relógio ao vivo (atualiza a cada segundo via auto-refresh não nativo;
-    # usamos st.empty + st.experimental_rerun na versão futura — aqui mostramos hora estática)
-    st.markdown(f"### `{datetime.now().strftime('%H:%M:%S')}`")
-    st.caption(date.today().strftime("%A, %d/%m/%Y"))
+    st.markdown(f"""
+    <div style="margin-top:16px; padding:16px; background:#1e2029; border-radius:10px; border:1px solid #2a2d3a; text-align:center">
+        <div style="font-family:'DM Mono',monospace; font-size:30px; color:#c8f564; letter-spacing:3px">{datetime.now().strftime('%H:%M')}</div>
+        <div style="font-size:11px; color:#7a7f96; margin-top:4px">{date.today().strftime('%d/%m/%Y')}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 CARGA_MIN = carga_h * 60
 
@@ -119,7 +333,7 @@ tab_reg, tab_manut, tab_hist, tab_rel, tab_banco = st.tabs([
 # ══════════════════════════════════════════════════════════════════════════
 
 with tab_reg:
-    st.subheader("Novo Registro de Ponto")
+    st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">Novo Registro de Ponto</div>', unsafe_allow_html=True)
 
     # Stats do topo
     todos = db.listar_pontos()
@@ -203,8 +417,8 @@ with tab_reg:
 # ══════════════════════════════════════════════════════════════════════════
 
 with tab_manut:
-    st.subheader("✏️ Manutenção de Registros")
-    st.caption("Busque um registro por data para editar ou excluir.")
+    st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:4px">✏️ Manutenção de Registros</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color:#7a7f96;font-size:13px;margin-bottom:20px">Busque um registro por data para editar ou excluir.</div>', unsafe_allow_html=True)
 
     # Busca
     col_busca, col_btn = st.columns([2, 1])
@@ -329,7 +543,7 @@ with tab_manut:
 # ══════════════════════════════════════════════════════════════════════════
 
 with tab_hist:
-    st.subheader("📋 Histórico de Registros")
+    st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">📋 Histórico de Registros</div>', unsafe_allow_html=True)
 
     # Filtro
     col_f1, col_f2 = st.columns([2, 2])
@@ -389,7 +603,7 @@ with tab_hist:
 # ══════════════════════════════════════════════════════════════════════════
 
 with tab_rel:
-    st.subheader("📊 Relatórios")
+    st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">📊 Relatórios</div>', unsafe_allow_html=True)
 
     if todos.empty:
         st.info("Nenhum dado disponível ainda. Comece registrando seus pontos.")
@@ -474,7 +688,7 @@ with tab_rel:
 # ══════════════════════════════════════════════════════════════════════════
 
 with tab_banco:
-    st.subheader("🏦 Banco de Horas")
+    st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">🏦 Banco de Horas</div>', unsafe_allow_html=True)
 
     if todos.empty:
         st.info("Nenhum dado disponível ainda.")
