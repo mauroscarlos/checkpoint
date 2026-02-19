@@ -1,215 +1,538 @@
+"""
+PontoFlow — Controle de Ponto com Streamlit + Supabase
+Arquivo principal: app.py
+"""
 import streamlit as st
-from supabase import create_client
 import pandas as pd
-from datetime import datetime, date, time
-import calendar
-import pytz
+import plotly.graph_objects as go
+from datetime import date, datetime, time
+import io
 
-# 1. Conexão Segura
-URL = "https://iorjkyxjjogqtjdlmyhv.supabase.co"
-KEY = "sb_publishable_M1aCKJu_pYJaFLgPP7Nlqw_C9qXfI6L"
-supabase = create_client(URL, KEY)
+import db
+import calculos as calc
 
-st.set_page_config(page_title="MSCGYM - Gestão", layout="wide")
-fuso_br = pytz.timezone('America/Sao_Paulo')
+# ── Configuração da página ─────────────────────────────────────────────────
 
-# --- CSS PARA REMOVER BOLINHAS E ESTILIZAR MENU ---
+st.set_page_config(
+    page_title="PontoFlow",
+    page_icon="⏱",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# CSS customizado para manter a identidade visual
 st.markdown("""
 <style>
-    /* Esconde as bolinhas do rádio (incluindo a vermelha) */
-    div[role="radiogroup"] span[data-baseweb="radio"] {
-        display: none !important;
-    }
-    
-    /* Transforma o texto do menu em botões */
-    div[role="radiogroup"] label {
-        background-color: #f1f3f5 !important;
-        border-radius: 10px !important;
-        padding: 12px 20px !important;
-        margin-bottom: 8px !important;
-        border: 1px solid #d1d3d4 !important;
-        display: block !important;
-        width: 100% !important;
-        cursor: pointer !important;
-    }
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;600&display=swap');
 
-    /* Botão Selecionado */
-    div[role="radiogroup"] input:checked + label {
-        background-color: #007BFF !important;
-        color: white !important;
-        font-weight: bold !important;
-        border-color: #0056b3 !important;
-    }
-    
-    /* Efeito de passar o mouse */
-    div[role="radiogroup"] label:hover {
-        background-color: #e9ecef !important;
-        transform: translateX(5px);
-        transition: 0.2s;
-    }
+html, body, [class*="css"] { font-family: 'Figtree', sans-serif; }
+code, .mono { font-family: 'DM Mono', monospace !important; }
+
+/* Métrica cards */
+[data-testid="metric-container"] {
+    background: #16181f;
+    border: 1px solid #2a2d3a;
+    border-radius: 14px;
+    padding: 16px 20px;
+    border-top: 3px solid #c8f564;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] { background: #16181f; }
+
+/* Botão primário */
+.stButton > button[kind="primary"] {
+    background: #c8f564 !important;
+    color: #0e0f13 !important;
+    font-weight: 700;
+    border-radius: 10px;
+    border: none;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #d8ff6e !important;
+    box-shadow: 0 4px 16px rgba(200,245,100,0.3);
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+
+/* Tabs */
+.stTabs [data-baseweb="tab"] { font-weight: 600; }
+
+div[data-testid="stSuccess"] { border-left: 4px solid #c8f564; }
+div[data-testid="stError"]   { border-left: 4px solid #ff6b6b; }
+div[data-testid="stWarning"] { border-left: 4px solid #f5a623; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Funções de Apoio ---
-def formatar_hora_segura(valor):
-    if not valor: return "00:00"
-    return str(valor)[:5]
 
-def calcular_total_horas(row):
-    try:
-        def to_min(t_str):
-            h, m = map(int, str(t_str).split(':'))
-            return h * 60 + m
-        t1, t2 = to_min(row['Entrada']), to_min(row['S.Almoco'])
-        t3, t4 = to_min(row['R.Almoco']), to_min(row['Saida'])
-        return round(((t2 - t1) + (t4 - t3)) / 60, 2)
-    except: return 0.0
+# ── Sidebar — configurações ────────────────────────────────────────────────
 
-# --- SISTEMA DE LOGIN ---
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-    st.session_state.usuario_logado = None
-
-if not st.session_state.autenticado:
-    st.title("🔐 MSCGYM - Login")
-    res_f = supabase.table("funcionarios").select("*").execute()
-    lista_u = [f['nome'] for f in res_f.data] if res_f.data else []
-    with st.form("login"):
-        user = st.selectbox("Usuário", lista_u)
-        senha = st.text_input("Senha", type="password")
-        if st.form_submit_button("Entrar"):
-            dados = next((f for f in res_f.data if f['nome'] == user), None)
-            if dados and str(dados.get('senha')) == senha:
-                st.session_state.autenticado = True
-                st.session_state.usuario_logado = dados
-                st.rerun()
-            else: st.error("Acesso Negado")
-    st.stop()
-
-u = st.session_state.usuario_logado
-eh_admin = u.get('perfil') == 'admin'
-
-# --- MENU LATERAL ---
 with st.sidebar:
-    st.title("🚀 MSCGYM")
-    st.write(f"Olá, **{u['nome']}**")
-    
-    # Adicionando Emojis para o menu ficar mais bonito
-    opcoes = ["🏠 Bater Ponto"]
-    if eh_admin:
-        opcoes += ["📅 Folha (Excel)", "📊 Relatórios", "👤 Cadastro"]
-    
-    pagina = st.radio("Navegação", opcoes)
-    
-    if eh_admin:
-        st.divider()
-        hj = datetime.now(fuso_br)
-        mes_sel = st.selectbox("Mês Referência", list(range(1, 13)), index=hj.month - 1)
-        ano_sel = st.number_input("Ano", value=hj.year)
-    
-    if st.button("Sair / Logout"):
-        st.session_state.autenticado = False
-        st.rerun()
+    st.markdown("## ⏱ PontoFlow")
+    st.caption("Controle de Jornada")
+    st.divider()
 
-# --- 1. PÁGINA: BATER PONTO ---
-if pagina == "🏠 Bater Ponto":
-    st.subheader("⌚ Ponto em Tempo Real")
-    agora = datetime.now(fuso_br)
-    hoje_str = agora.strftime('%Y-%m-%d')
-    
-    st.markdown(f"""<div style="background-color: #007BFF; padding: 20px; border-radius: 15px; text-align: center; color: white;">
-        <h1>{agora.strftime('%H:%M:%S')}</h1><p>{agora.strftime('%d/%m/%Y')}</p></div>""", unsafe_allow_html=True)
-    
-    res = supabase.table("registros_ponto").select("*").eq("usuario", u['nome']).eq("data", hoje_str).execute()
-    reg_hoje = res.data[0] if res.data else None
-    
-    proxima = "Entrada"
-    if reg_hoje:
-        if not reg_hoje.get('saida_almoco'): proxima = "Saída Almoço"
-        elif not reg_hoje.get('retorno_almoco'): proxima = "Retorno Almoço"
-        elif not reg_hoje.get('saida'): proxima = "Saída Final"
-        else: proxima = "Concluído"
+    carga_h = st.number_input(
+        "Carga horária diária (h)", min_value=1, max_value=24,
+        value=st.secrets.get("config", {}).get("carga_horaria_padrao", 8),
+        step=1,
+    )
+    dias_semana = st.selectbox(
+        "Dias trabalhados / semana", options=[5, 6],
+        index=0,
+    )
 
-    if proxima != "Concluído":
-        if st.button(f"REGISTRAR {proxima.upper()}", use_container_width=True):
-            hora_at = agora.strftime('%H:%M')
-            if not reg_hoje:
-                supabase.table("registros_ponto").insert({"usuario": u['nome'], "data": hoje_str, "entrada": hora_at, "horas_extras": -8.0}).execute()
-            else:
-                campo = {"Saída Almoço": "saida_almoco", "Retorno Almoço": "retorno_almoco", "Saída Final": "saida"}[proxima]
-                payload = {campo: hora_at}
-                if proxima == "Saída Final":
-                    total = calcular_total_horas({'Entrada': reg_hoje['entrada'], 'S.Almoco': reg_hoje['saida_almoco'], 'R.Almoco': reg_hoje['retorno_almoco'], 'Saida': hora_at})
-                    payload.update({"horas_trabalhadas": total, "horas_extras": round(total - 8.0, 2)})
-                supabase.table("registros_ponto").update(payload).eq("id", reg_hoje['id']).execute()
-            st.rerun()
-    else: st.success("Jornada Concluída!")
+    st.divider()
+    st.caption(f"Meta diária: **{carga_h}h00**")
+    st.caption(f"Meta semanal: **{carga_h * dias_semana}h00**")
+    st.divider()
 
-# --- 2. PÁGINA: FOLHA EXCEL (ADMIN) ---
-elif pagina == "📅 Folha (Excel)" and eh_admin:
-    st.subheader(f"📊 Planilha de Ajustes - {mes_sel:02d}/{ano_sel}")
-    res_func = supabase.table("funcionarios").select("nome").execute()
-    alvo = st.selectbox("Selecione o Funcionário", [f['nome'] for f in res_func.data])
+    # Relógio ao vivo (atualiza a cada segundo via auto-refresh não nativo;
+    # usamos st.empty + st.experimental_rerun na versão futura — aqui mostramos hora estática)
+    st.markdown(f"### `{datetime.now().strftime('%H:%M:%S')}`")
+    st.caption(date.today().strftime("%A, %d/%m/%Y"))
 
-    num_dias = calendar.monthrange(int(ano_sel), mes_sel)[1]
-    df_base = pd.DataFrame({
-        "Data": [date(int(ano_sel), mes_sel, d) for d in range(1, num_dias + 1)],
-        "Entrada": ["08:00"] * num_dias, "S.Almoco": ["12:00"] * num_dias,
-        "R.Almoco": ["13:00"] * num_dias, "Saida": ["17:00"] * num_dias
-    })
+CARGA_MIN = carga_h * 60
 
-    res_p = supabase.table("registros_ponto").select("*").eq("usuario", alvo).execute()
-    if res_p.data:
-        for r in res_p.data:
-            dt_r = datetime.strptime(r['data'], '%Y-%m-%d').date()
-            idx = df_base.index[df_base['Data'] == dt_r]
-            if not idx.empty:
-                df_base.loc[idx, "Entrada"] = formatar_hora_segura(r.get('entrada'))
-                df_base.loc[idx, "S.Almoco"] = formatar_hora_segura(r.get('saida_almoco'))
-                df_base.loc[idx, "R.Almoco"] = formatar_hora_segura(r.get('retorno_almoco'))
-                df_base.loc[idx, "Saida"] = formatar_hora_segura(r.get('saida'))
 
-    df_editado = st.data_editor(df_base, hide_index=True, use_container_width=True)
+# ── Tabs principais ────────────────────────────────────────────────────────
 
-    if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary"):
-        for _, row in df_editado.iterrows():
-            t = calcular_total_horas(row)
-            payload = {
-                "usuario": alvo, "data": str(row['Data']),
-                "entrada": row['Entrada'], "saida_almoco": row['S.Almoco'],
-                "retorno_almoco": row['R.Almoco'], "saida": row['Saida'],
-                "horas_trabalhadas": t, "horas_extras": round(t - 8.0, 2)
-            }
-            supabase.table("registros_ponto").upsert(payload, on_conflict="usuario,data").execute()
-        st.success("Dados salvos!"); st.rerun()
+tab_reg, tab_manut, tab_hist, tab_rel, tab_banco = st.tabs([
+    "⏱ Registrar",
+    "✏️ Manutenção",
+    "📋 Histórico",
+    "📊 Relatórios",
+    "🏦 Banco de Horas",
+])
 
-# --- 3. PÁGINA: RELATÓRIOS (ADMIN) ---
-elif pagina == "📊 Relatórios" and eh_admin:
-    st.subheader("📊 Relatórios e Biometria Digital")
-    res_f = supabase.table("funcionarios").select("*").execute()
-    alvo_r = st.selectbox("Selecione para o Relatório", [f['nome'] for f in res_f.data])
-    
-    res_p = supabase.table("registros_ponto").select("*").eq("usuario", alvo_r).execute()
-    if res_p.data:
-        df = pd.DataFrame(res_p.data)
-        df['data'] = pd.to_datetime(df['data'])
-        df_mes = df[(df['data'].dt.month == mes_sel) & (df['data'].dt.year == int(ano_sel))].sort_values("data")
-        
-        c1, c2 = st.columns(2)
-        c1.metric("Total de Horas", f"{df_mes['horas_trabalhadas'].sum():.2f}h")
-        c2.metric("Saldo de Horas Extras", f"{df_mes['horas_extras'].sum():.2f}h")
-        
-        st.dataframe(df_mes[['data', 'entrada', 'saida', 'horas_trabalhadas', 'horas_extras']], use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 1 — REGISTRAR PONTO
+# ══════════════════════════════════════════════════════════════════════════
+
+with tab_reg:
+    st.subheader("Novo Registro de Ponto")
+
+    # Stats do topo
+    todos = db.listar_pontos()
+    todos_enr = calc.enriquecer_df(todos, CARGA_MIN) if not todos.empty else todos
+
+    col1, col2, col3, col4 = st.columns(4)
+    hoje = date.today()
+
+    # Hoje
+    reg_hoje = db.buscar_ponto(hoje)
+    trab_hoje = calc.calcular_trabalhado(reg_hoje) if reg_hoje else 0
+    col1.metric("Hoje trabalhado", calc.minutes_to_hhmm(trab_hoje or 0), f"meta {carga_h}h")
+
+    # Semana
+    inicio_semana = hoje - pd.Timedelta(days=hoje.weekday())
+    fim_semana = inicio_semana + pd.Timedelta(days=6)
+    if not todos.empty:
+        df_sem = todos_enr[
+            (pd.to_datetime(todos_enr["data"]).dt.date >= inicio_semana) &
+            (pd.to_datetime(todos_enr["data"]).dt.date <= fim_semana)
+        ]
+        trab_sem = int(df_sem["trabalhado_min"].sum())
     else:
-        st.warning("Nenhum dado encontrado para este período.")
+        trab_sem = 0
+    col2.metric("Esta semana", calc.minutes_to_hhmm(trab_sem))
 
-# --- 4. PÁGINA: CADASTRO ---
-elif pagina == "👤 Cadastro" and eh_admin:
-    st.subheader("👤 Gestão de Funcionários")
-    with st.form("cad"):
-        n = st.text_input("Nome Completo")
-        s = st.text_input("Senha de Acesso", value="1234")
-        p = st.selectbox("Perfil", ["funcionario", "admin"])
-        if st.form_submit_button("Cadastrar / Atualizar"):
-            supabase.table("funcionarios").upsert({"nome": n, "senha": s, "perfil": p}, on_conflict="nome").execute()
-            st.success("Pronto!"); st.rerun()
+    # Banco
+    if not todos.empty:
+        banco_info = calc.calcular_banco(todos, CARGA_MIN)
+        saldo = banco_info["saldo"]
+    else:
+        saldo = 0
+    col3.metric("Banco de horas", calc.minutes_to_hhmm(abs(saldo)),
+                "a favor" if saldo >= 0 else "em débito",
+                delta_color="normal" if saldo >= 0 else "inverse")
+    col4.metric("Dias registrados", len(todos))
+
+    st.divider()
+
+    # Formulário
+    with st.form("form_registro", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**📅 Data & Entrada**")
+            f_data = st.date_input("Data", value=hoje, format="DD/MM/YYYY")
+            f_entrada = st.time_input("Entrada", value=time(8, 0), step=60)
+            f_saida_almoco = st.time_input("Saída almoço", value=time(12, 0), step=60)
+        with c2:
+            st.markdown("**🔚 Retorno & Saída**")
+            st.markdown("")  # espaço visual
+            f_retorno = st.time_input("Retorno almoço", value=time(13, 0), step=60)
+            f_saida = st.time_input("Saída", value=time(17, 0), step=60)
+            f_obs = st.text_input("Observação (opcional)", placeholder="Ex: Home office, reunião...")
+
+        submitted = st.form_submit_button("✓ Salvar Registro", type="primary", use_container_width=True)
+
+    if submitted:
+        try:
+            db.salvar_ponto(
+                data=f_data,
+                entrada=f_entrada,
+                saida_almoco=f_saida_almoco,
+                retorno_almoco=f_retorno,
+                saida=f_saida,
+                obs=f_obs,
+            )
+            trab = calc.calcular_trabalhado({
+                "entrada": f_entrada, "saida": f_saida,
+                "saida_almoco": f_saida_almoco, "retorno_almoco": f_retorno
+            })
+            diff = trab - CARGA_MIN if trab else None
+            diff_str = f" | Diferença: {calc.minutes_to_delta(diff)}" if diff is not None else ""
+            st.success(f"✓ Ponto salvo! Trabalhado: {calc.minutes_to_hhmm(trab or 0)}{diff_str}")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 2 — MANUTENÇÃO
+# ══════════════════════════════════════════════════════════════════════════
+
+with tab_manut:
+    st.subheader("✏️ Manutenção de Registros")
+    st.caption("Busque um registro por data para editar ou excluir.")
+
+    # Busca
+    col_busca, col_btn = st.columns([2, 1])
+    with col_busca:
+        data_busca = st.date_input("Selecione a data", value=hoje, format="DD/MM/YYYY", key="manut_data")
+    with col_btn:
+        st.markdown("<div style='margin-top:28px'>", unsafe_allow_html=True)
+        buscar = st.button("🔍 Buscar registro", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Resultado
+    reg = db.buscar_ponto(data_busca)
+
+    if buscar or "manut_reg" in st.session_state:
+        if buscar:
+            st.session_state["manut_reg"] = reg
+            st.session_state["manut_data_sel"] = data_busca
+
+        reg = st.session_state.get("manut_reg")
+        data_sel = st.session_state.get("manut_data_sel", data_busca)
+
+        if reg is None:
+            st.warning(f"Nenhum registro encontrado para {data_sel.strftime('%d/%m/%Y')}.")
+            st.info("💡 Você pode criar um novo registro pela aba **⏱ Registrar**.")
+        else:
+            trab_atual = calc.calcular_trabalhado(reg)
+            diff_atual = trab_atual - CARGA_MIN if trab_atual else None
+
+            st.divider()
+            # Preview do registro atual
+            st.markdown(f"**Registro atual — {data_sel.strftime('%d/%m/%Y')} ({data_sel.strftime('%A')})**")
+            cc1, cc2, cc3, cc4 = st.columns(4)
+            cc1.metric("Entrada", reg.get("entrada") or "—")
+            cc2.metric("Saída almoço", reg.get("saida_almoco") or "—")
+            cc3.metric("Retorno", reg.get("retorno_almoco") or "—")
+            cc4.metric("Saída", reg.get("saida") or "—")
+
+            if trab_atual is not None:
+                st.info(
+                    f"⏱ Trabalhado: **{calc.minutes_to_hhmm(trab_atual)}** | "
+                    f"Diferença: **{calc.minutes_to_delta(diff_atual)}**"
+                )
+
+            st.divider()
+            st.markdown("**Editar registro:**")
+
+            def parse_time(val) -> time:
+                if not val:
+                    return time(0, 0)
+                try:
+                    h, m = str(val)[:5].split(":")
+                    return time(int(h), int(m))
+                except Exception:
+                    return time(0, 0)
+
+            with st.form("form_manutencao"):
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    m_entrada = st.time_input("Entrada", value=parse_time(reg.get("entrada")), step=60)
+                    m_saida_almoco = st.time_input("Saída almoço", value=parse_time(reg.get("saida_almoco")), step=60)
+                with mc2:
+                    m_retorno = st.time_input("Retorno almoço", value=parse_time(reg.get("retorno_almoco")), step=60)
+                    m_saida = st.time_input("Saída", value=parse_time(reg.get("saida")), step=60)
+
+                m_obs = st.text_input("Observação", value=reg.get("obs") or "")
+
+                # Preview do novo cálculo em tempo real
+                novo_trab = calc.calcular_trabalhado({
+                    "entrada": m_entrada, "saida": m_saida,
+                    "saida_almoco": m_saida_almoco, "retorno_almoco": m_retorno,
+                })
+                if novo_trab is not None:
+                    novo_diff = novo_trab - CARGA_MIN
+                    st.caption(
+                        f"Pré-visualização → Trabalhado: **{calc.minutes_to_hhmm(novo_trab)}** | "
+                        f"Diferença: **{calc.minutes_to_delta(novo_diff)}**"
+                    )
+
+                btn_salvar, btn_excluir = st.columns([3, 1])
+                with btn_salvar:
+                    salvar_edit = st.form_submit_button("💾 Salvar alterações", type="primary", use_container_width=True)
+                with btn_excluir:
+                    excluir_edit = st.form_submit_button("🗑 Excluir registro", use_container_width=True)
+
+            if salvar_edit:
+                try:
+                    db.salvar_ponto(
+                        data=data_sel,
+                        entrada=m_entrada,
+                        saida_almoco=m_saida_almoco,
+                        retorno_almoco=m_retorno,
+                        saida=m_saida,
+                        obs=m_obs,
+                    )
+                    st.success("✓ Registro atualizado com sucesso!")
+                    del st.session_state["manut_reg"]
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+
+            if excluir_edit:
+                try:
+                    db.excluir_ponto(reg["id"])
+                    st.success("🗑 Registro excluído.")
+                    del st.session_state["manut_reg"]
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao excluir: {e}")
+
+    # Exclusão em massa (expansível)
+    with st.expander("⚠️ Zona de perigo — Excluir todos os registros"):
+        st.warning("Esta ação é **irreversível** e remove todos os dados do banco.")
+        confirma = st.text_input("Digite CONFIRMAR para prosseguir")
+        if st.button("🗑 Excluir tudo", type="primary") and confirma == "CONFIRMAR":
+            db.excluir_todos()
+            st.success("Todos os registros foram removidos.")
+            st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 3 — HISTÓRICO
+# ══════════════════════════════════════════════════════════════════════════
+
+with tab_hist:
+    st.subheader("📋 Histórico de Registros")
+
+    # Filtro
+    col_f1, col_f2 = st.columns([2, 2])
+    with col_f1:
+        meses_disp = sorted(set(
+            pd.to_datetime(todos["data"]).dt.to_period("M").astype(str).tolist()
+        ), reverse=True) if not todos.empty else []
+        mes_atual = date.today().strftime("%Y-%m")
+        idx_default = meses_disp.index(mes_atual) if mes_atual in meses_disp else 0
+        filtro_mes = st.selectbox(
+            "Filtrar por mês", options=["Todos"] + meses_disp, index=idx_default + 1 if meses_disp else 0
+        )
+
+    df_hist = db.listar_pontos(filtro_mes if filtro_mes != "Todos" else None)
+    df_hist_enr = calc.enriquecer_df(df_hist, CARGA_MIN) if not df_hist.empty else df_hist
+
+    if df_hist_enr.empty:
+        st.info("Nenhum registro encontrado para este período.")
+    else:
+        # Formatar para exibição
+        def fmt_date(d):
+            return pd.to_datetime(d).strftime("%d/%m/%Y")
+
+        display = df_hist_enr[[
+            "data", "dia_semana", "entrada", "saida_almoco", "retorno_almoco",
+            "saida", "trabalhado_fmt", "diferenca_fmt", "obs"
+        ]].copy()
+        display["data"] = display["data"].apply(fmt_date)
+        display.columns = [
+            "Data", "Dia", "Entrada", "Saída Almoço", "Retorno",
+            "Saída", "Trabalhado", "Diferença", "Obs."
+        ]
+        display = display.fillna("—")
+
+        st.dataframe(
+            display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Diferença": st.column_config.TextColumn("Diferença"),
+                "Trabalhado": st.column_config.TextColumn("Trabalhado"),
+            }
+        )
+
+        # Exportar CSV
+        csv = display.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "⬇ Exportar CSV",
+            data=csv,
+            file_name=f"pontoflow_{filtro_mes or 'completo'}.csv",
+            mime="text/csv",
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 4 — RELATÓRIOS
+# ══════════════════════════════════════════════════════════════════════════
+
+with tab_rel:
+    st.subheader("📊 Relatórios")
+
+    if todos.empty:
+        st.info("Nenhum dado disponível ainda. Comece registrando seus pontos.")
+    else:
+        # Stats gerais
+        banco_info = calc.calcular_banco(todos, CARGA_MIN)
+        media_diaria = banco_info["total_trabalhado"] // len(todos) if len(todos) else 0
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total trabalhado", calc.minutes_to_hhmm(banco_info["total_trabalhado"]))
+        c2.metric("Horas extras", calc.minutes_to_hhmm(banco_info["total_extras"]))
+        c3.metric("Faltas (horas)", calc.minutes_to_hhmm(banco_info["total_faltas"]))
+        c4.metric("Média diária", calc.minutes_to_hhmm(media_diaria))
+
+        st.divider()
+
+        # Gráfico semanal
+        df_sem = calc.resumo_semanal(todos, CARGA_MIN, dias_semana)
+        if not df_sem.empty:
+            st.markdown("**Horas por semana**")
+            cores = ["#c8f564" if v >= m else "#f5a623" if v >= m * 0.8 else "#ff6b6b"
+                     for v, m in zip(df_sem["trabalhado_min"], df_sem["meta"])]
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=df_sem["semana"],
+                y=df_sem["trabalhado_min"] / 60,
+                marker_color=cores,
+                text=df_sem["trabalhado_fmt"],
+                textposition="outside",
+                hovertemplate="<b>Semana %{x}</b><br>Trabalhado: %{text}<extra></extra>",
+            ))
+            fig.add_hline(
+                y=CARGA_MIN * dias_semana / 60,
+                line_dash="dash",
+                line_color="#7a7f96",
+                annotation_text="Meta semanal",
+                annotation_position="top right",
+            )
+            fig.update_layout(
+                paper_bgcolor="#0e0f13",
+                plot_bgcolor="#16181f",
+                font_color="#e8eaf0",
+                showlegend=False,
+                height=320,
+                margin=dict(l=0, r=0, t=20, b=0),
+                yaxis_title="Horas",
+                xaxis=dict(gridcolor="#2a2d3a"),
+                yaxis=dict(gridcolor="#2a2d3a"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+
+        # Tabela mensal
+        st.markdown("**Detalhamento por mês**")
+        df_mes = calc.resumo_mensal(todos, CARGA_MIN)
+        if not df_mes.empty:
+            def fmt_mes(m):
+                y, mo = m.split("-")
+                return pd.Timestamp(year=int(y), month=int(mo), day=1).strftime("%B %Y")
+
+            df_mes_disp = df_mes.copy()
+            df_mes_disp["mes"] = df_mes_disp["mes"].apply(fmt_mes)
+            df_mes_disp["Total"] = df_mes_disp["total_min"].apply(calc.minutes_to_hhmm)
+            df_mes_disp["Meta"] = df_mes_disp["meta_min"].apply(calc.minutes_to_hhmm)
+            df_mes_disp["Extras"] = df_mes_disp["extras_min"].apply(lambda x: f"+{calc.minutes_to_hhmm(x)}")
+            df_mes_disp["Faltas"] = df_mes_disp["faltas_min"].apply(lambda x: f"-{calc.minutes_to_hhmm(x)}")
+            df_mes_disp["Saldo"] = df_mes_disp["saldo_min"].apply(calc.minutes_to_delta)
+
+            st.dataframe(
+                df_mes_disp[["mes", "dias", "Total", "Meta", "Extras", "Faltas", "Saldo"]].rename(
+                    columns={"mes": "Mês", "dias": "Dias"}
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TAB 5 — BANCO DE HORAS
+# ══════════════════════════════════════════════════════════════════════════
+
+with tab_banco:
+    st.subheader("🏦 Banco de Horas")
+
+    if todos.empty:
+        st.info("Nenhum dado disponível ainda.")
+    else:
+        banco_info = calc.calcular_banco(todos, CARGA_MIN)
+
+        # Cards
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Horas creditadas", calc.minutes_to_hhmm(banco_info["total_extras"]), "horas extras trabalhadas")
+        c2.metric("Horas debitadas", calc.minutes_to_hhmm(banco_info["total_faltas"]), "horas em falta")
+        saldo = banco_info["saldo"]
+        c3.metric(
+            "Saldo atual",
+            calc.minutes_to_hhmm(abs(saldo)),
+            "a favor" if saldo >= 0 else "em débito",
+            delta_color="normal" if saldo >= 0 else "inverse",
+        )
+
+        st.divider()
+
+        # Gráfico de saldo acumulado
+        df_acum = banco_info["df_acumulado"]
+        if not df_acum.empty:
+            st.markdown("**Evolução do saldo acumulado**")
+            cores_linha = ["#6af0c8" if v >= 0 else "#ff6b6b" for v in df_acum["saldo_acum"]]
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(
+                x=pd.to_datetime(df_acum["data"]).dt.strftime("%d/%m"),
+                y=df_acum["saldo_acum"] / 60,
+                mode="lines+markers",
+                line=dict(color="#c8f564", width=2),
+                marker=dict(color=cores_linha, size=8),
+                fill="tozeroy",
+                fillcolor="rgba(200,245,100,0.08)",
+                hovertemplate="<b>%{x}</b><br>Saldo: %{y:.1f}h<extra></extra>",
+            ))
+            fig2.add_hline(y=0, line_color="#7a7f96", line_dash="dash")
+            fig2.update_layout(
+                paper_bgcolor="#0e0f13",
+                plot_bgcolor="#16181f",
+                font_color="#e8eaf0",
+                height=280,
+                margin=dict(l=0, r=0, t=10, b=0),
+                yaxis_title="Horas",
+                xaxis=dict(gridcolor="#2a2d3a"),
+                yaxis=dict(gridcolor="#2a2d3a"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.divider()
+
+        # Tabela detalhada
+        st.markdown("**Movimentações dia a dia**")
+        df_tab = df_acum.copy()
+        df_tab["data_fmt"] = pd.to_datetime(df_tab["data"]).dt.strftime("%d/%m/%Y")
+        df_tab["Trabalhado"] = df_tab["trabalhado_min"].apply(calc.minutes_to_hhmm)
+        df_tab["Meta"] = calc.minutes_to_hhmm(CARGA_MIN)
+        df_tab["Diferença"] = df_tab["diferenca_min"].apply(calc.minutes_to_delta)
+        df_tab["Saldo Acum."] = df_tab["saldo_acum"].apply(calc.minutes_to_delta)
+
+        st.dataframe(
+            df_tab[["data_fmt", "Trabalhado", "Meta", "Diferença", "Saldo Acum."]].rename(
+                columns={"data_fmt": "Data"}
+            ).sort_values("Data", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+        )
