@@ -555,14 +555,17 @@ with tab_hist:
     if todos.empty:
         st.info("Nenhum registro ainda. Comece registrando seus pontos na aba ⏱ Registrar.")
     else:
-        # Filtro de mês
-        meses_disp = sorted(set(
-            pd.to_datetime(todos["data"]).dt.strftime("%Y-%m").tolist()
-        ), reverse=True)
+        # Filtro de mês — converte data para string YYYY-MM independente do tipo
+        todos_str = todos.copy()
+        todos_str["_mes"] = todos_str["data"].astype(str).str[:7]
+
+        meses_disp = sorted(todos_str["_mes"].unique().tolist(), reverse=True)
 
         def fmt_mes_label(m):
             y, mo = m.split("-")
-            return pd.Timestamp(year=int(y), month=int(mo), day=1).strftime("%B/%Y").capitalize()
+            meses_pt = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+            return f"{meses_pt[int(mo)]}/{y}"
 
         meses_labels = {m: fmt_mes_label(m) for m in meses_disp}
         mes_atual = hoje.strftime("%Y-%m")
@@ -573,9 +576,10 @@ with tab_hist:
         label_to_key = {v: k for k, v in meses_labels.items()}
         filtro_mes = label_to_key.get(filtro_label)
 
-        # Filtra o dataframe já carregado (sem nova query ao banco)
+        # Filtra pelo mês selecionado
         if filtro_mes:
-            df_hist = todos[pd.to_datetime(todos["data"]).dt.strftime("%Y-%m") == filtro_mes].copy()
+            mask = todos_str["_mes"] == filtro_mes
+            df_hist = todos[mask].copy()
         else:
             df_hist = todos.copy()
 
@@ -584,11 +588,6 @@ with tab_hist:
         if df_hist_enr.empty:
             st.info("Nenhum registro encontrado para este período.")
         else:
-            # DEBUG — remover após confirmar
-            st.write("Colunas:", df_hist_enr.columns.tolist())
-            st.write("Tipos:", df_hist_enr.dtypes.to_dict())
-            st.write("Primeiras linhas:", df_hist_enr.head(3))
-
             display = df_hist_enr[[
                 "data", "dia_semana", "entrada", "saida_almoco", "retorno_almoco",
                 "saida", "trabalhado_fmt", "diferenca_fmt", "obs"
