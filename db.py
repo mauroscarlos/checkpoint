@@ -4,6 +4,7 @@ Camada de acesso ao Supabase — todas as operações de banco ficam aqui.
 """
 from __future__ import annotations
 
+import time as time_module
 import streamlit as st
 from supabase import create_client, Client
 from datetime import date, time
@@ -11,7 +12,7 @@ from typing import Optional
 import pandas as pd
 
 
-# ── Conexão (singleton via cache) ──────────────────────────────────────────
+# ── Conexão ────────────────────────────────────────────────────────────────
 
 @st.cache_resource
 def get_client() -> Client:
@@ -21,6 +22,21 @@ def get_client() -> Client:
 
 
 TABLE = "pontos"
+
+
+# ── Retry helper ───────────────────────────────────────────────────────────
+
+def _retry(fn, retries=3, delay=1.5):
+    """Executa fn com até `retries` tentativas em caso de erro de rede."""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time_module.sleep(delay)
+    raise last_err
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -37,36 +53,27 @@ def _to_str(t) -> Optional[str]:
 # ── CRUD ───────────────────────────────────────────────────────────────────
 
 def listar_pontos(mes: Optional[str] = None) -> pd.DataFrame:
-    """
-    Retorna todos os registros (ou filtra por mês 'YYYY-MM').
-    Colunas: id, data, entrada, saida_almoco, retorno_almoco, saida, obs, created_at, updated_at
-    """
     client = get_client()
-    q = client.table(TABLE).select("*").order("data", desc=True)
 
-    if mes:
-        inicio = f"{mes}-01"
-        # último dia do mês
-        y, m = int(mes[:4]), int(mes[5:])
-        if m == 12:
-            fim = f"{y+1}-01-01"
-        else:
-            fim = f"{y}-{m+1:02d}-01"
-        q = q.gte("data", inicio).lt("data", fim)
+    def _query():
+        q = client.table(TABLE).select("*").order("data", desc=True)
+        if mes:
+            inicio = f"{mes}-01"
+            y, m = int(mes[:4]), int(mes[5:])
+            fim = f"{y+1}-01-01" if m == 12 else f"{y}-{m+1:02d}-01"
+            q = q.gte("data", inicio).lt("data", fim)
+        return q.execute()
 
-    resp = q.execute()
+    resp = _retry(_query)
     df = pd.DataFrame(resp.data) if resp.data else pd.DataFrame(
         columns=["id","data","entrada","saida_almoco","retorno_almoco","saida","obs","created_at","updated_at"]
     )
-    if not df.empty:
-        df["data"] = pd.to_datetime(df["data"]).dt.date
     return df
 
 
 def buscar_ponto(data: date) -> Optional[dict]:
-    """Retorna o registro de um dia específico ou None."""
     client = get_client()
-    resp = client.table(TABLE).select("*").eq("data", str(data)).execute()
+    resp = _retry(lambda: client.table(TABLE).select("*").eq("data", str(data)).execute())
     return resp.data[0] if resp.data else None
 
 
@@ -78,10 +85,6 @@ def salvar_ponto(
     saida: Optional[time],
     obs: str = "",
 ) -> dict:
-    """
-    Insere ou atualiza (upsert) um registro de ponto.
-    Retorna o registro salvo.
-    """
     client = get_client()
     payload = {
         "data": str(data),
@@ -91,17 +94,15 @@ def salvar_ponto(
         "saida": _to_str(saida),
         "obs": obs or None,
     }
-    resp = client.table(TABLE).upsert(payload, on_conflict="data").execute()
+    resp = _retry(lambda: client.table(TABLE).upsert(payload, on_conflict="data").execute())
     return resp.data[0] if resp.data else payload
 
 
 def excluir_ponto(registro_id: int) -> None:
-    """Exclui um registro pelo ID."""
     client = get_client()
-    client.table(TABLE).delete().eq("id", registro_id).execute()
+    _retry(lambda: client.table(TABLE).delete().eq("id", registro_id).execute())
 
 
 def excluir_todos() -> None:
-    """Remove TODOS os registros (use com cuidado!)."""
     client = get_client()
-    client.table(TABLE).delete().neq("id", 0).execute()
+    _retry(lambda: client.table(TABLE).delete().neq("id", 0).execute())
