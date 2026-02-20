@@ -555,6 +555,12 @@ with tab_hist:
     # Busca dados frescos (não usa o cache do topo)
     todos_hist = db.listar_pontos()
 
+    # DEBUG TEMPORÁRIO — remover após confirmar funcionamento
+    st.caption(f"🔍 Debug: {len(todos_hist)} registros encontrados no banco")
+    if not todos_hist.empty:
+        st.dataframe(todos_hist, use_container_width=True)
+        st.stop()
+
     # Filtro de mês com label legível
     col_f1, col_f2 = st.columns([2, 2])
     with col_f1:
