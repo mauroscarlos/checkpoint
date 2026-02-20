@@ -320,6 +320,11 @@ with st.sidebar:
 
 CARGA_MIN = carga_h * 60
 
+# ── Carrega dados uma vez por execução do script, disponível para todas as tabs ──
+todos = db.listar_pontos()
+todos_enr = calc.enriquecer_df(todos, CARGA_MIN) if not todos.empty else todos
+hoje = datetime.now(TZ_BR).date()
+
 
 # ── Tabs principais ────────────────────────────────────────────────────────
 
@@ -339,12 +344,7 @@ tab_reg, tab_manut, tab_hist, tab_rel, tab_banco = st.tabs([
 with tab_reg:
     st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">Novo Registro de Ponto</div>', unsafe_allow_html=True)
 
-    # Stats do topo
-    todos = db.listar_pontos()
-    todos_enr = calc.enriquecer_df(todos, CARGA_MIN) if not todos.empty else todos
-
     col1, col2, col3, col4 = st.columns(4)
-    hoje = datetime.now(TZ_BR).date()
 
     # Hoje
     reg_hoje = db.buscar_ponto(hoje)
@@ -552,76 +552,55 @@ with tab_manut:
 with tab_hist:
     st.markdown('<div style="font-family:\'DM Serif Display\',serif;font-size:24px;color:#e8eaf0;margin-bottom:20px">📋 Histórico de Registros</div>', unsafe_allow_html=True)
 
-    # Busca dados frescos (não usa o cache do topo)
-    todos_hist = db.listar_pontos()
-
-    # DEBUG TEMPORÁRIO — remover após confirmar funcionamento
-    st.caption(f"🔍 Debug: {len(todos_hist)} registros encontrados no banco")
-    if not todos_hist.empty:
-        st.dataframe(todos_hist, use_container_width=True)
-        st.stop()
-
-    # Filtro de mês com label legível
-    col_f1, col_f2 = st.columns([2, 2])
-    with col_f1:
+    if todos.empty:
+        st.info("Nenhum registro ainda. Comece registrando seus pontos na aba ⏱ Registrar.")
+    else:
+        # Filtro de mês
         meses_disp = sorted(set(
-            pd.to_datetime(todos_hist["data"]).dt.to_period("M").astype(str).tolist()
-        ), reverse=True) if not todos_hist.empty else []
+            pd.to_datetime(todos["data"]).dt.strftime("%Y-%m").tolist()
+        ), reverse=True)
 
         def fmt_mes_label(m):
             y, mo = m.split("-")
             return pd.Timestamp(year=int(y), month=int(mo), day=1).strftime("%B/%Y").capitalize()
 
         meses_labels = {m: fmt_mes_label(m) for m in meses_disp}
-        mes_atual = datetime.now(TZ_BR).strftime("%Y-%m")
-        idx_default = meses_disp.index(mes_atual) if mes_atual in meses_disp else 0
-        filtro_mes_label = st.selectbox(
-            "Filtrar por mês",
-            options=["Todos"] + [meses_labels[m] for m in meses_disp],
-            index=idx_default + 1 if meses_disp else 0
-        )
-        # Converte label de volta para YYYY-MM
+        mes_atual = hoje.strftime("%Y-%m")
+        opcoes = ["Todos os meses"] + [meses_labels[m] for m in meses_disp]
+        idx_default = next((i+1 for i, m in enumerate(meses_disp) if m == mes_atual), 0)
+
+        filtro_label = st.selectbox("Filtrar por mês", options=opcoes, index=idx_default)
         label_to_key = {v: k for k, v in meses_labels.items()}
-        filtro_mes = label_to_key.get(filtro_mes_label)  # None se "Todos"
+        filtro_mes = label_to_key.get(filtro_label)
 
-    df_hist = db.listar_pontos(filtro_mes)
-    df_hist_enr = calc.enriquecer_df(df_hist, CARGA_MIN) if not df_hist.empty else df_hist
+        # Filtra o dataframe já carregado (sem nova query ao banco)
+        if filtro_mes:
+            df_hist = todos[pd.to_datetime(todos["data"]).dt.strftime("%Y-%m") == filtro_mes].copy()
+        else:
+            df_hist = todos.copy()
 
-    if df_hist_enr.empty:
-        st.info("Nenhum registro encontrado para este período.")
-    else:
-        def fmt_date(d):
-            return pd.to_datetime(d).strftime("%d/%m/%Y")
+        df_hist_enr = calc.enriquecer_df(df_hist, CARGA_MIN) if not df_hist.empty else df_hist
 
-        display = df_hist_enr[[
-            "data", "dia_semana", "entrada", "saida_almoco", "retorno_almoco",
-            "saida", "trabalhado_fmt", "diferenca_fmt", "obs"
-        ]].copy()
-        display["data"] = display["data"].apply(fmt_date)
-        display.columns = [
-            "Data", "Dia", "Entrada", "Saída Almoço", "Retorno",
-            "Saída", "Trabalhado", "Diferença", "Obs."
-        ]
-        display = display.fillna("—")
+        if df_hist_enr.empty:
+            st.info("Nenhum registro encontrado para este período.")
+        else:
+            display = df_hist_enr[[
+                "data", "dia_semana", "entrada", "saida_almoco", "retorno_almoco",
+                "saida", "trabalhado_fmt", "diferenca_fmt", "obs"
+            ]].copy()
+            display["data"] = pd.to_datetime(display["data"]).dt.strftime("%d/%m/%Y")
+            display.columns = ["Data", "Dia", "Entrada", "Saída Almoço", "Retorno", "Saída", "Trabalhado", "Diferença", "Obs."]
+            display = display.fillna("—")
 
-        st.dataframe(
-            display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Diferença": st.column_config.TextColumn("Diferença"),
-                "Trabalhado": st.column_config.TextColumn("Trabalhado"),
-            }
-        )
+            st.dataframe(display, use_container_width=True, hide_index=True,
+                column_config={
+                    "Diferença": st.column_config.TextColumn("Diferença"),
+                    "Trabalhado": st.column_config.TextColumn("Trabalhado"),
+                })
 
-        # Exportar CSV
-        csv = display.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "⬇ Exportar CSV",
-            data=csv,
-            file_name=f"pontoflow_{filtro_mes or 'completo'}.csv",
-            mime="text/csv",
-        )
+            csv = display.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("⬇ Exportar CSV", data=csv,
+                file_name=f"pontoflow_{filtro_mes or 'completo'}.csv", mime="text/csv")
 
 
 # ══════════════════════════════════════════════════════════════════════════
