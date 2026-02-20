@@ -584,6 +584,11 @@ with tab_hist:
         if df_hist_enr.empty:
             st.info("Nenhum registro encontrado para este período.")
         else:
+            # DEBUG — remover após confirmar
+            st.write("Colunas:", df_hist_enr.columns.tolist())
+            st.write("Tipos:", df_hist_enr.dtypes.to_dict())
+            st.write("Primeiras linhas:", df_hist_enr.head(3))
+
             display = df_hist_enr[[
                 "data", "dia_semana", "entrada", "saida_almoco", "retorno_almoco",
                 "saida", "trabalhado_fmt", "diferenca_fmt", "obs"
