@@ -63,6 +63,8 @@ def calcular_trabalhado(row: dict | pd.Series) -> Optional[int]:
     return max(total, 0)
 
 
+DIAS_PT = {"Mon":"Seg","Tue":"Ter","Wed":"Qua","Thu":"Qui","Fri":"Sex","Sat":"Sáb","Sun":"Dom"}
+
 def enriquecer_df(df: pd.DataFrame, carga_min: int) -> pd.DataFrame:
     """
     Adiciona colunas calculadas ao DataFrame:
@@ -82,7 +84,12 @@ def enriquecer_df(df: pd.DataFrame, carga_min: int) -> pd.DataFrame:
     df["diferenca_fmt"] = df["diferenca_min"].apply(
         lambda d: minutes_to_delta(d) if d is not None else "—"
     )
-    df["dia_semana"] = pd.to_datetime(df["data"]).dt.strftime("%a")
+    # Converte data para datetime de forma segura independente do dtype
+    try:
+        datas = pd.to_datetime(df["data"].astype(str), errors="coerce")
+        df["dia_semana"] = datas.dt.strftime("%a").map(DIAS_PT).fillna("—")
+    except Exception:
+        df["dia_semana"] = "—"
 
     return df
 
