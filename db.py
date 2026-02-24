@@ -1,18 +1,13 @@
 """
-pontoflow/db.py
-Camada de acesso ao Supabase — todas as operações de banco ficam aqui.
+finflow/db.py — Acesso ao Supabase
 """
 from __future__ import annotations
-
 import time as time_module
 import streamlit as st
 from supabase import create_client, Client
-from datetime import date, time
+from datetime import date
 from typing import Optional
 import pandas as pd
-
-
-# ── Conexão ────────────────────────────────────────────────────────────────
 
 @st.cache_resource
 def get_client() -> Client:
@@ -20,14 +15,7 @@ def get_client() -> Client:
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
 
-
-TABLE = "pontos"
-
-
-# ── Retry helper ───────────────────────────────────────────────────────────
-
 def _retry(fn, retries=3, delay=1.5):
-    """Executa fn com até `retries` tentativas em caso de erro de rede."""
     last_err = None
     for attempt in range(retries):
         try:
@@ -38,71 +26,104 @@ def _retry(fn, retries=3, delay=1.5):
                 time_module.sleep(delay)
     raise last_err
 
+# ── Categorias ─────────────────────────────────────────────────────────────
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-def _to_str(t) -> Optional[str]:
-    """Converte time/string para 'HH:MM' ou None."""
-    if t is None:
-        return None
-    if isinstance(t, time):
-        return t.strftime("%H:%M")
-    return str(t)[:5] if t else None
-
-
-# ── CRUD ───────────────────────────────────────────────────────────────────
-
-def listar_pontos(mes: Optional[str] = None) -> pd.DataFrame:
+def listar_categorias(tipo: Optional[str] = None) -> pd.DataFrame:
     client = get_client()
+    def _q():
+        q = client.table("categorias").select("*").order("nome")
+        if tipo:
+            q = q.eq("tipo", tipo)
+        return q.execute()
+    resp = _retry(_q)
+    return pd.DataFrame(resp.data) if resp.data else pd.DataFrame(
+        columns=["id","nome","tipo","icone","cor","created_at"])
 
-    def _query():
-        q = client.table(TABLE).select("*").order("data", desc=True)
+def salvar_categoria(nome: str, tipo: str, icone: str, cor: str) -> dict:
+    client = get_client()
+    payload = {"nome": nome.strip(), "tipo": tipo, "icone": icone, "cor": cor}
+    resp = _retry(lambda: client.table("categorias").upsert(payload, on_conflict="nome").execute())
+    return resp.data[0] if resp.data else payload
+
+def excluir_categoria(cat_id: int) -> None:
+    client = get_client()
+    _retry(lambda: client.table("categorias").delete().eq("id", cat_id).execute())
+
+# ── Transações ─────────────────────────────────────────────────────────────
+
+def listar_transacoes(mes: Optional[str] = None, tipo: Optional[str] = None) -> pd.DataFrame:
+    client = get_client()
+    def _q():
+        q = (client.table("transacoes")
+             .select("*")
+             .order("data", desc=True))
         if mes:
-            inicio = f"{mes}-01"
             y, m = int(mes[:4]), int(mes[5:])
             fim = f"{y+1}-01-01" if m == 12 else f"{y}-{m+1:02d}-01"
-            q = q.gte("data", inicio).lt("data", fim)
+            q = q.gte("data", f"{mes}-01").lt("data", fim)
+        if tipo:
+            q = q.eq("tipo", tipo)
         return q.execute()
+    resp = _retry(_q)
+    if not resp.data:
+        return pd.DataFrame(columns=["id","data","descricao","valor","tipo",
+                                      "categoria_id","observacao",
+                                      "categoria_nome","categoria_icone"])
+    df = pd.DataFrame(resp.data)
 
-    resp = _retry(_query)
-    df = pd.DataFrame(resp.data) if resp.data else pd.DataFrame(
-        columns=["id","data","entrada","saida_almoco","retorno_almoco","saida","obs","created_at","updated_at"]
-    )
+    # Garante que categoria_id seja numérico para o merge
+    df["categoria_id"] = pd.to_numeric(df["categoria_id"], errors="coerce")
+
+    # Busca categorias e faz merge
+    try:
+        cats = listar_categorias()
+        if not cats.empty:
+            cats["id"] = pd.to_numeric(cats["id"], errors="coerce")
+            merged = df.merge(
+                cats[["id","nome","icone"]].rename(columns={
+                    "id": "categoria_id",
+                    "nome": "categoria_nome",
+                    "icone": "categoria_icone"
+                }),
+                on="categoria_id", how="left"
+            )
+            merged["categoria_nome"] = merged["categoria_nome"].fillna("—")
+            merged["categoria_icone"] = merged["categoria_icone"].fillna("")
+            return merged
+    except Exception:
+        pass
+
+    # Fallback sem categorias
+    df["categoria_nome"] = "—"
+    df["categoria_icone"] = ""
     return df
 
-
-def buscar_ponto(data: date) -> Optional[dict]:
+def buscar_transacao(trans_id: int) -> Optional[dict]:
     client = get_client()
-    resp = _retry(lambda: client.table(TABLE).select("*").eq("data", str(data)).execute())
+    resp = _retry(lambda: client.table("transacoes").select("*").eq("id", trans_id).execute())
     return resp.data[0] if resp.data else None
 
-
-def salvar_ponto(
-    data: date,
-    entrada: Optional[time],
-    saida_almoco: Optional[time],
-    retorno_almoco: Optional[time],
-    saida: Optional[time],
-    obs: str = "",
+def salvar_transacao(
+    data: date, descricao: str, valor: float, tipo: str,
+    categoria_id: Optional[int], observacao: str = "", trans_id: Optional[int] = None
 ) -> dict:
     client = get_client()
     payload = {
-        "data": str(data),
-        "entrada": _to_str(entrada),
-        "saida_almoco": _to_str(saida_almoco),
-        "retorno_almoco": _to_str(retorno_almoco),
-        "saida": _to_str(saida),
-        "obs": obs or None,
+        "data": str(data), "descricao": descricao.strip(),
+        "valor": round(float(valor), 2), "tipo": tipo,
+        "categoria_id": categoria_id, "observacao": observacao or None,
     }
-    resp = _retry(lambda: client.table(TABLE).upsert(payload, on_conflict="data").execute())
+    if trans_id:
+        payload["id"] = trans_id
+        resp = _retry(lambda: client.table("transacoes").upsert(payload).execute())
+    else:
+        resp = _retry(lambda: client.table("transacoes").insert(payload).execute())
     return resp.data[0] if resp.data else payload
 
-
-def excluir_ponto(registro_id: int) -> None:
+def excluir_transacao(trans_id: int) -> None:
     client = get_client()
-    _retry(lambda: client.table(TABLE).delete().eq("id", registro_id).execute())
+    _retry(lambda: client.table("transacoes").delete().eq("id", trans_id).execute())
 
-
-def excluir_todos() -> None:
+def excluir_todas_transacoes() -> None:
     client = get_client()
-    _retry(lambda: client.table(TABLE).delete().neq("id", 0).execute())
+    _retry(lambda: client.table("transacoes").delete().neq("id", 0).execute())
