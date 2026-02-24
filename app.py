@@ -596,11 +596,48 @@ with tab_hist:
             display.columns = ["Data", "Dia", "Entrada", "Saída Almoço", "Retorno", "Saída", "Trabalhado", "Diferença", "Obs."]
             display = display.fillna("—")
 
-            st.dataframe(display, use_container_width=True, hide_index=True,
-                column_config={
-                    "Diferença": st.column_config.TextColumn("Diferença"),
-                    "Trabalhado": st.column_config.TextColumn("Trabalhado"),
-                })
+            def cor_diferenca(val):
+                if val.startswith("+"):
+                    return "color:#6af0c8"
+                elif val.startswith("-"):
+                    return "color:#ff6b6b"
+                return "color:#7a7f96"
+
+            rows_html = ""
+            for _, row in display.iterrows():
+                cor_diff = cor_diferenca(str(row["Diferença"]))
+                rows_html += f"""
+                <tr>
+                    <td><b>{row['Data']}</b></td>
+                    <td style="color:#7a7f96">{row['Dia']}</td>
+                    <td style="font-family:'DM Mono',monospace">{row['Entrada']}</td>
+                    <td style="font-family:'DM Mono',monospace">{row['Saída Almoço']}</td>
+                    <td style="font-family:'DM Mono',monospace">{row['Retorno']}</td>
+                    <td style="font-family:'DM Mono',monospace">{row['Saída']}</td>
+                    <td style="font-family:'DM Mono',monospace;color:#c8f564">{row['Trabalhado']}</td>
+                    <td style="font-family:'DM Mono',monospace;{cor_diff}">{row['Diferença']}</td>
+                    <td style="color:#7a7f96;font-size:12px">{row['Obs.']}</td>
+                </tr>"""
+
+            st.markdown(f"""
+            <style>
+            .ponto-table {{ width:100%; border-collapse:collapse; font-family:'Figtree',sans-serif; font-size:14px; }}
+            .ponto-table th {{ padding:10px 14px; text-align:left; font-size:10px; text-transform:uppercase;
+                letter-spacing:1.5px; color:#7a7f96; font-family:'DM Mono',monospace;
+                border-bottom:1px solid #2a2d3a; background:#16181f; }}
+            .ponto-table td {{ padding:12px 14px; border-bottom:1px solid rgba(42,45,58,0.5); color:#e8eaf0; }}
+            .ponto-table tr:hover td {{ background:#1e2029; }}
+            </style>
+            <div style="background:#16181f;border:1px solid #2a2d3a;border-radius:14px;overflow:hidden">
+            <table class="ponto-table">
+                <thead><tr>
+                    <th>Data</th><th>Dia</th><th>Entrada</th><th>Saída Almoço</th>
+                    <th>Retorno</th><th>Saída</th><th>Trabalhado</th><th>Diferença</th><th>Obs.</th>
+                </tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+            </div>
+            """, unsafe_allow_html=True)
 
             csv = display.to_csv(index=False).encode("utf-8-sig")
             st.download_button("⬇ Exportar CSV", data=csv,
